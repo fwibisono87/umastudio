@@ -126,6 +126,19 @@ export function kelvinToRgb(kelvin: number): [number, number, number] {
   return linear.map((v) => v / luminance) as [number, number, number];
 }
 
+/**
+ * Rendered colour of a light as the camera records it: the light's colour relative to
+ * the camera's white balance, scaled to unit luminance. A light at the white-balance
+ * temperature renders neutral white.
+ */
+export function lightColor(lightK: number, whiteBalanceK: number): [number, number, number] {
+  const light = kelvinToRgb(lightK);
+  const white = kelvinToRgb(whiteBalanceK);
+  const balanced = light.map((v, i) => v / white[i]!) as [number, number, number];
+  const luminance = 0.2126 * balanced[0] + 0.7152 * balanced[1] + 0.0722 * balanced[2];
+  return balanced.map((v) => v / luminance) as [number, number, number];
+}
+
 /** The half-power angle is full width; grids narrow it only when their angle is smaller. */
 export function effectiveBeamAngle(light: LightState): number {
   const modifier = getModifier(light.modifierId);

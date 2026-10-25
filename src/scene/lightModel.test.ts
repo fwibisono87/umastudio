@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createDefaultScene, createLight } from './document';
 import { incidentAperture, STROBE_LM_S_PER_WS } from './photometry';
-import { illuminanceAt, kelvinToRgb, meterReading, onAxisIntensity, relativeIntensity } from './lightModel';
+import { illuminanceAt, kelvinToRgb, lightColor, meterReading, onAxisIntensity, relativeIntensity } from './lightModel';
 import type { LightState, SceneDocument } from './types';
 
 function calibratedLight(modifierId: string): LightState {
@@ -134,5 +134,14 @@ describe('shared light model', () => {
       const [r, g, b] = kelvinToRgb(kelvin);
       expect(0.2126 * r + 0.7152 * g + 0.0722 * b).toBeCloseTo(1, 10);
     }
+  });
+
+  it('renders a light at the white-balance temperature as neutral', () => {
+    const [r, g, b] = lightColor(5500, 5500);
+    expect(r).toBeCloseTo(1, 6);
+    expect(g).toBeCloseTo(1, 6);
+    expect(b).toBeCloseTo(1, 6);
+    const [tr, , tb] = lightColor(3200, 5500);
+    expect(tr).toBeGreaterThan(tb);
   });
 });

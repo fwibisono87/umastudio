@@ -22,12 +22,15 @@ import { RectAreaLightUniformsLib } from 'three/addons/lights/RectAreaLightUnifo
 import type { AppContext, EntityRef } from '../../core/context';
 import { LAYER_HELPERS, LAYER_SCENE } from '../../core/context';
 import { getModifier } from '../../scene/modifiers';
-import { illuminanceAt, kelvinToRgb, onAxisIntensity, outerAngleForHalfPower } from '../../scene/lightModel';
+import { illuminanceAt, kelvinToRgb, lightColor, onAxisIntensity, outerAngleForHalfPower } from '../../scene/lightModel';
 import { renderIntensityContinuous, renderIntensityStrobe } from '../../scene/photometry';
 import type { LightState, PropState, SceneDocument, Vec3 } from '../../scene/types';
 import { isLargeDiffuseSource, rectEffectiveArea, sourceDistance, splitSoftSource } from './renderMath';
 
 const FORWARD = new Vector3(0, 0, 1);
+// Bodies point +Z at their target, but three.js lights emit along their local -Z, so an
+// area light copying a body's orientation needs a half turn to face the same way.
+const FLIP_TO_LIGHT_AXIS = new Quaternion().setFromAxisAngle(new Vector3(0, 1, 0), Math.PI);
 const AREA_SHARE = 0.58;
 let areaUniformsReady = false;
 let gizmoCommitSerial = 0;
@@ -199,8 +202,8 @@ export function createLightRuntime(ctx: AppContext): {
     const areaShare = runtime.area && state.accessories.gridDeg === null && !state.accessories.barnDoors ? AREA_SHARE : 0;
     if (runtime.area) {
       runtime.area.position.fromArray(position);
-      runtime.area.quaternion.copy(runtime.body.quaternion);
-      const color = kelvinToRgb(state.colorTempK);
+      runtime.area.quaternion.copy(runtime.body.quaternion).multiply(FLIP_TO_LIGHT_AXIS);
+      const color = lightColor(state.colorTempK, doc.camera.whiteBalanceK);
       runtime.area.color.setRGB(color[0], color[1], color[2], LinearSRGBColorSpace);
       const physical = onAxisIntensity(state);
       const face = getModifier(state.modifierId);
@@ -208,7 +211,7 @@ export function createLightRuntime(ctx: AppContext): {
       setPhysicalIntensity(runtime.area, split.areaLuminance, physical.perSecond, doc);
     }
 
-    const color = kelvinToRgb(state.colorTempK);
+    const color = lightColor(state.colorTempK, doc.camera.whiteBalanceK);
     const physical = onAxisIntensity(state);
     if (runtime.spot) {
       runtime.spot.color.setRGB(color[0], color[1], color[2], LinearSRGBColorSpace);
@@ -236,7 +239,7 @@ export function createLightRuntime(ctx: AppContext): {
     if (runtime.bounce) {
       const faceNormal = axis.lengthSq() > 0 ? axis : new Vector3(0, 0, 1);
       runtime.bounce.position.copy(new Vector3(...position).addScaledVector(faceNormal, 0.015));
-      runtime.bounce.quaternion.copy(runtime.body.quaternion);
+      runtime.bounce.quaternion.copy(runtime.body.quaternion).multiply(FLIP_TO_LIGHT_AXIS);
       const virtualScale = state.color === '#c8cdd2' ? 0.35 : 1;
       const width = Math.max(0.05, state.widthM * virtualScale);
       const height = Math.max(0.05, state.heightM * virtualScale);

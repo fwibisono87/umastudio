@@ -13,6 +13,15 @@ export const BODY_PRESETS: readonly CameraBodyPreset[] = [
   { name: 'Medium format leaf shutter', sensorWidthMm: 44, sensorHeightMm: 33, flashSyncS: 1 / 2000, category: 'leaf-shutter' },
 ];
 
+/** Camera white-balance presets, kelvin. */
+export const WHITE_BALANCE_PRESETS = [
+  { name: 'Tungsten', kelvin: 3200 },
+  { name: 'Fluorescent', kelvin: 4000 },
+  { name: 'Flash / daylight', kelvin: 5500 },
+  { name: 'Cloudy', kelvin: 6500 },
+  { name: 'Shade', kelvin: 7500 },
+] as const;
+
 export const COMMON_PRIMES_MM = [24, 35, 50, 85, 105, 135, 200] as const;
 
 export interface CameraPlacement {

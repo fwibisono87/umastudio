@@ -27,6 +27,7 @@ export function createDefaultScene(): SceneDocument {
       aperture: 8,
       shutterS: 1 / 125,
       iso: 100,
+      whiteBalanceK: 5500,
     },
     lights: [
       createLight('key', 'Key', {

@@ -79,6 +79,11 @@ export interface CameraState extends Aimed {
   /** Seconds, e.g. 1/125. */
   shutterS: number;
   iso: number;
+  /**
+   * White balance, kelvin: a light of this colour temperature renders neutral. 5500 K
+   * matches flash and daylight; set it to 3200 K under tungsten.
+   */
+  whiteBalanceK: number;
 }
 
 export interface CameraBody {

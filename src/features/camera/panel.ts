@@ -7,6 +7,7 @@ import {
   COMMON_PRIMES_MM,
   placementFromPosition,
   positionFromPlacement,
+  WHITE_BALANCE_PRESETS,
 } from './cameraMath';
 import { bindControls, button, checkbox, group, numberField, readout, select, type Control } from '../../ui/controls';
 import { el } from '../../ui/dom';
@@ -111,16 +112,22 @@ export function installCameraPanel(ctx: AppContext, onDisplayOptionsChange: () =
     get: () => ctx.store.doc.camera.iso,
     set: (value) => update((doc) => { doc.camera.iso = value; }, 'ISO'),
   });
+  const whiteBalance = select({
+    label: 'White balance',
+    options: WHITE_BALANCE_PRESETS.map(({ kelvin, name }) => ({ value: kelvin, label: `${name} · ${kelvin} K` })),
+    get: () => ctx.store.doc.camera.whiteBalanceK,
+    set: (value) => update((doc) => { doc.camera.whiteBalanceK = value; }, 'white balance'),
+  });
   const ev = readout('EV100', () => {
     const camera = ctx.store.doc.camera;
     return ev100(camera.aperture, camera.shutterS, camera.iso).toFixed(1);
   });
-  controls.push(aperture, shutter, iso, ev);
+  controls.push(aperture, shutter, iso, whiteBalance, ev);
   const syncWarning = el('div', { class: 'camera-sync-warning' });
   syncWarning.style.color = 'var(--danger)';
   syncWarning.style.fontSize = '12px';
   syncWarning.style.padding = '5px 0 0 106px';
-  panel.append(group('Exposure', [aperture, shutter, iso, ev, syncWarning]));
+  panel.append(group('Exposure', [aperture, shutter, iso, whiteBalance, ev, syncWarning]));
 
   const distance = numberField({
     label: 'Distance', unit: 'm', min: 0.2, max: 100, step: 0.1, precision: 2,
