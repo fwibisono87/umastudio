@@ -1,8 +1,5 @@
 import {
   BufferGeometry,
-  BoxGeometry,
-  CircleGeometry,
-  CylinderGeometry,
   DoubleSide,
   Group,
   LinearSRGBColorSpace,
@@ -11,7 +8,6 @@ import {
   Mesh,
   MeshBasicMaterial,
   MeshPhysicalMaterial,
-  MeshStandardMaterial,
   Object3D,
   PlaneGeometry,
   PointLight,
@@ -26,10 +22,15 @@ import type { AppContext, EntityRef } from '../../core/context';
 import { LAYER_HELPERS, LAYER_SCENE } from '../../core/context';
 import { aimFromQuaternion, aimQuaternion, aimQuaternionForNegativeZ } from '../../scene/aim';
 import { getModifier } from '../../scene/modifiers';
-import { illuminanceAt, kelvinToRgb, lightColor, onAxisIntensity, outerAngleForHalfPower } from '../../scene/lightModel';
+import { illuminanceAt, lightColor, onAxisIntensity, outerAngleForHalfPower } from '../../scene/lightModel';
 import { renderIntensityContinuous, renderIntensityStrobe } from '../../scene/photometry';
 import type { LightState, PropState, SceneDocument, Vec3 } from '../../scene/types';
 import { isLargeDiffuseSource, rectEffectiveArea, sourceDistance, splitSoftSource } from './renderMath';
+import { buildLightBody, setLightBodySelected, updateLightBodyColor } from './bodies/lightBodies';
+import { buildLightStand, planLightStand } from './bodies/stand';
+import type { StandVariant } from './bodies/stand';
+import { buildPropFrame, buildPropStand } from './bodies/propBodies';
+import { clearGroup, disposeObject, prepareHelper } from './bodies/common';
 
 const AREA_SHARE = 0.58;
 let areaUniformsReady = false;
@@ -37,7 +38,9 @@ let gizmoCommitSerial = 0;
 
 interface LightRuntime {
   body: Group;
-  stand: Mesh;
+  stand: Group;
+  standVariant: StandVariant;
+  mountPoint: Vector3;
   proxy: Object3D;
   aimProxy: Object3D;
   aimHandle: Mesh;
@@ -48,6 +51,7 @@ interface LightRuntime {
   target: Object3D | null;
   area: RectAreaLight | null;
   unregister: () => void;
+  unregisterStand: () => void;
   bodySignature: string;
   state: LightState;
   position: Vec3;
@@ -55,6 +59,8 @@ interface LightRuntime {
 
 interface PropRuntime {
   body: Group;
+  frame: Group;
+  stand: Group;
   proxy: Object3D;
   aimProxy: Object3D;
   aimHandle: Mesh;
@@ -63,6 +69,7 @@ interface PropRuntime {
   surface: Mesh;
   bounce: RectAreaLight | null;
   unregister: () => void;
+  unregisterStand: () => void;
   signature: string;
   state: PropState;
   position: Vec3;
@@ -133,7 +140,7 @@ export function createLightRuntime(ctx: AppContext): {
     body.layers.set(LAYER_HELPERS);
     body.visible = ctx.views.mode === 'set';
     ctx.scene.add(body);
-    const stand = new Mesh(new CylinderGeometry(0.025, 0.035, 1, 8), new MeshStandardMaterial({ color: 0x30343b, roughness: 0.7 }));
+    const stand = buildLightStand('stand');
     prepareHelper(stand);
     stand.visible = ctx.views.mode === 'set';
     ctx.scene.add(stand);
@@ -183,6 +190,8 @@ export function createLightRuntime(ctx: AppContext): {
     const runtime: LightRuntime = {
       body,
       stand,
+      standVariant: 'stand',
+      mountPoint: new Vector3(),
       proxy,
       ...aim,
       spot,
@@ -190,6 +199,7 @@ export function createLightRuntime(ctx: AppContext): {
       target,
       area,
       unregister: ctx.picking.register(body, { kind: 'light', id: state.id }),
+      unregisterStand: ctx.picking.register(stand, { kind: 'light', id: state.id }),
       bodySignature: '',
       state,
       position: [...state.position],
@@ -203,7 +213,12 @@ export function createLightRuntime(ctx: AppContext): {
     body.layers.set(LAYER_SCENE);
     const surface = makePropSurface(state);
     body.add(surface);
+    const frame = buildPropFrame(state.widthM, state.heightM, state.kind);
+    body.add(frame);
     ctx.scene.add(body);
+    const stand = buildPropStand();
+    stand.visible = ctx.views.mode === 'set';
+    ctx.scene.add(stand);
     const proxy = new Object3D();
     proxy.userData.editorOnly = true;
     ctx.scene.add(proxy);
@@ -218,12 +233,15 @@ export function createLightRuntime(ctx: AppContext): {
     }
     const runtime: PropRuntime = {
       body,
+      frame,
+      stand,
       proxy,
       ...aim,
       surface,
       bounce,
       unregister: ctx.picking.register(body, { kind: 'prop', id: state.id }),
-      signature: '',
+      unregisterStand: ctx.picking.register(stand, { kind: 'prop', id: state.id }),
+      signature: propBodySignature(state),
       state,
       position: [...state.position],
     };
@@ -240,8 +258,24 @@ export function createLightRuntime(ctx: AppContext): {
     if (!(ctx.gizmo.attached === runtime.proxy && ctx.gizmo.dragging && ctx.gizmo.toolMode === 'rotate')) {
       runtime.proxy.quaternion.copy(aimQuaternion(position, state.target, state.rollDeg));
     }
-    runtime.stand.position.set(position[0], Math.max(0, position[1]) / 2, position[2]);
-    runtime.stand.scale.y = Math.max(0.05, position[1]);
+    runtime.body.updateMatrixWorld(true);
+    const mountWorld = runtime.body.localToWorld(runtime.mountPoint.clone());
+    const aimDirection = new Vector3(...state.target).sub(new Vector3(...position)).normalize();
+    const standPlan = planLightStand(mountWorld, aimDirection, position[1]);
+    if (runtime.standVariant !== standPlan.variant) {
+      runtime.unregisterStand();
+      ctx.scene.remove(runtime.stand);
+      disposeObject(runtime.stand);
+      runtime.stand = buildLightStand(standPlan.variant);
+      runtime.standVariant = standPlan.variant;
+      runtime.unregisterStand = ctx.picking.register(runtime.stand, { kind: 'light', id: state.id });
+      ctx.scene.add(runtime.stand);
+    }
+    runtime.stand.position.set(standPlan.basePosition.x, 0, standPlan.basePosition.z);
+    runtime.stand.rotation.y = standPlan.yawRadians;
+    const baseHeight = Number(runtime.stand.userData.baseHeightM ?? 1);
+    runtime.stand.scale.y = standPlan.heightM / baseHeight;
+    runtime.stand.visible = ctx.views.mode === 'set';
     if (runtime.spot && runtime.target) {
       runtime.spot.position.fromArray(position);
       runtime.spot.quaternion.copy(aimQuaternionForNegativeZ(position, state.target, state.rollDeg));
@@ -329,6 +363,14 @@ export function createLightRuntime(ctx: AppContext): {
       setPhysicalIntensity(runtime.bounce, candela / effectiveArea, true, doc);
       runtime.bounce.visible = state.kind === 'bounce';
     }
+    const direction = new Vector3(...state.target).sub(new Vector3(...position));
+    direction.y = 0;
+    if (direction.lengthSq() < 1e-6) direction.set(0, 0, 1);
+    else direction.normalize();
+    runtime.stand.position.set(position[0] - direction.x * 0.42, 0, position[2] - direction.z * 0.42);
+    runtime.stand.rotation.y = Math.atan2(direction.x, direction.z);
+    runtime.stand.scale.y = Math.max(0.12, position[1]);
+    runtime.stand.visible = ctx.views.mode === 'set';
     syncAimParts(runtime, position, state.target, { kind: 'prop', id: state.id });
   };
 
@@ -336,6 +378,7 @@ export function createLightRuntime(ctx: AppContext): {
     const runtime = lights.get(id);
     if (!runtime) return;
     runtime.unregister();
+    runtime.unregisterStand();
     runtime.unregisterAim();
     ctx.scene.remove(runtime.body, runtime.stand, runtime.proxy, runtime.aimProxy, runtime.aimHandle, runtime.aimLine);
     runtime.aimLine.geometry.dispose();
@@ -365,13 +408,15 @@ export function createLightRuntime(ctx: AppContext): {
     const runtime = props.get(id);
     if (!runtime) return;
     runtime.unregister();
+    runtime.unregisterStand();
     runtime.unregisterAim();
-    ctx.scene.remove(runtime.body, runtime.proxy, runtime.aimProxy, runtime.aimHandle, runtime.aimLine);
+    ctx.scene.remove(runtime.body, runtime.stand, runtime.proxy, runtime.aimProxy, runtime.aimHandle, runtime.aimLine);
     runtime.aimLine.geometry.dispose();
     disposeMaterials(runtime.aimLine.material);
     runtime.aimHandle.geometry.dispose();
     disposeMaterials(runtime.aimHandle.material);
     disposeObject(runtime.body);
+    disposeObject(runtime.stand);
     if (runtime.bounce) ctx.scene.remove(runtime.bounce);
     if (ctx.gizmo.attached === runtime.proxy || ctx.gizmo.attached === runtime.aimProxy) ctx.gizmo.detach();
     if (activeProxy === runtime.proxy || activeProxy === runtime.aimProxy) {
@@ -393,14 +438,15 @@ export function createLightRuntime(ctx: AppContext): {
       }
       current.state = state;
       const selected = selectionOwns(ctx.selection.current, { kind: 'light', id: state.id });
-      const signature = lightBodySignature(state, selected);
+      const signature = lightBodySignature(state);
       if (current.bodySignature !== signature) {
         clearGroup(current.body);
-        buildLightBody(current.body, state, selected);
+        const built = buildLightBody(current.body, state);
+        current.mountPoint.copy(built.mountPoint);
         current.bodySignature = signature;
-      } else {
-        updateLightBodyColor(current.body, state);
       }
+      setLightBodySelected(current.body, state, selected);
+      updateLightBodyColor(current.body, state);
       const wantsArea = isLargeDiffuseSource(state);
       if (current.area && !wantsArea) {
         ctx.scene.remove(current.area);
@@ -430,12 +476,16 @@ export function createLightRuntime(ctx: AppContext): {
     for (const state of doc.props) {
       const runtime = props.get(state.id) ?? createProp(state);
       runtime.state = state;
-      const signature = `${state.kind}|${state.widthM}|${state.heightM}|${state.color}|${state.transmission}`;
+      const signature = propBodySignature(state);
       if (signature !== runtime.signature) {
         runtime.body.remove(runtime.surface);
         disposeObject(runtime.surface);
         runtime.surface = makePropSurface(state);
         runtime.body.add(runtime.surface);
+        runtime.body.remove(runtime.frame);
+        disposeObject(runtime.frame);
+        runtime.frame = buildPropFrame(state.widthM, state.heightM, state.kind);
+        runtime.body.add(runtime.frame);
         runtime.signature = signature;
         if (state.kind === 'bounce' && !runtime.bounce) {
           runtime.bounce = new RectAreaLight(0xffffff, renderIntensityContinuous(0, doc.camera), state.widthM, state.heightM);
@@ -463,11 +513,7 @@ export function createLightRuntime(ctx: AppContext): {
 
   const updateSelectionHighlight = (selected: EntityRef | null) => {
     for (const [id, runtime] of lights) {
-      const signature = lightBodySignature(runtime.state, selectionOwns(selected, { kind: 'light', id }));
-      if (runtime.bodySignature === signature) continue;
-      clearGroup(runtime.body);
-      buildLightBody(runtime.body, runtime.state, selectionOwns(selected, { kind: 'light', id }));
-      runtime.bodySignature = signature;
+      setLightBodySelected(runtime.body, runtime.state, selectionOwns(selected, { kind: 'light', id }));
     }
   };
 
@@ -599,6 +645,7 @@ export function createLightRuntime(ctx: AppContext): {
       runtime.body.visible = mode === 'set';
       runtime.stand.visible = mode === 'set';
     }
+    for (const runtime of props.values()) runtime.stand.visible = mode === 'set';
     for (const runtime of lights.values()) syncAimParts(runtime, runtime.position, runtime.state.target, { kind: 'light', id: runtime.state.id });
     for (const runtime of props.values()) syncAimParts(runtime, runtime.position, runtime.state.target, { kind: 'prop', id: runtime.state.id });
   });
@@ -636,13 +683,17 @@ function lightOuterAngle(state: LightState): number {
   return Math.min(Math.PI / 2 - 0.005, Math.max(0.01, outer));
 }
 
-function lightBodySignature(state: LightState, selected: boolean): string {
-  return `${state.modifierId}|${state.accessories.gridDeg ?? ''}|${doorSignature(state)}|selected:${selected}`;
+function lightBodySignature(state: LightState): string {
+  return `${state.output.kind}|${state.modifierId}|${state.accessories.gridDeg ?? ''}|${doorSignature(state)}`;
 }
 
 function doorSignature(state: LightState): string {
   const doors = state.accessories.barnDoors;
   return doors ? `${doors.top},${doors.bottom},${doors.left},${doors.right}` : '';
+}
+
+function propBodySignature(state: PropState): string {
+  return `${state.kind}|${state.widthM}|${state.heightM}|${state.color}|${state.transmission}`;
 }
 
 /** Live light and prop bodies use the shared +Z-forward frame directly. */
@@ -652,95 +703,6 @@ export function lightBodyQuaternion(position: Vec3, target: Vec3, rollDeg: numbe
 
 function orientForward(object: Object3D, position: Vec3, target: Vec3, rollDeg: number): void {
   object.quaternion.copy(lightBodyQuaternion(position, target, rollDeg));
-}
-
-function buildLightBody(root: Group, state: LightState, selected: boolean): void {
-  const modifier = getModifier(state.modifierId);
-  const dark = new MeshStandardMaterial({ color: 0x242933, roughness: 0.45, metalness: 0.15, side: DoubleSide });
-  let shell: Mesh;
-  switch (modifier.category) {
-    case 'bare':
-      shell = new Mesh(new SphereGeometry(0.065, 14, 10), new MeshBasicMaterial({ color: 0xfff3dd }));
-      break;
-    case 'softbox':
-    case 'stripbox':
-      shell = new Mesh(new BoxGeometry(modifier.widthM, modifier.heightM, modifier.depthM), dark);
-      shell.position.z = -modifier.depthM / 2;
-      break;
-    case 'octabox':
-      shell = new Mesh(new CylinderGeometry(modifier.widthM / 2, modifier.widthM / 2, modifier.depthM, 8), dark);
-      shell.rotation.x = Math.PI / 2;
-      shell.position.z = -modifier.depthM / 2;
-      break;
-    case 'umbrella':
-      shell = new Mesh(new SphereGeometry(modifier.widthM / 2, 18, 8, 0, Math.PI * 2, 0, Math.PI / 2), dark);
-      shell.rotation.x = Math.PI / 2;
-      shell.position.z = -modifier.depthM / 2;
-      break;
-    case 'reflector':
-    case 'dish':
-      shell = new Mesh(new CylinderGeometry(modifier.widthM / 2, Math.min(0.06, modifier.widthM / 4), modifier.depthM, 24, 1, true), dark);
-      shell.rotation.x = Math.PI / 2;
-      shell.position.z = -modifier.depthM / 2;
-      break;
-    case 'snoot':
-      shell = new Mesh(new CylinderGeometry(0.03, modifier.widthM / 2, modifier.depthM, 16, 1, true), dark);
-      shell.rotation.x = Math.PI / 2;
-      shell.position.z = -modifier.depthM / 2;
-      break;
-  }
-  prepareHelper(shell);
-  root.add(shell);
-  if (modifier.category === 'umbrella') {
-    const shaft = new Mesh(new CylinderGeometry(0.008, 0.008, modifier.depthM * 1.8, 8), new MeshStandardMaterial({ color: 0x838b97, metalness: 0.75, roughness: 0.35 }));
-    shaft.rotation.x = Math.PI / 2;
-    shaft.position.z = -modifier.depthM * 0.35;
-    prepareHelper(shaft);
-    root.add(shaft);
-  }
-
-  const faceGeometry = modifier.shape === 'rect'
-    ? new PlaneGeometry(modifier.widthM, modifier.heightM)
-    : new CircleGeometry(modifier.widthM / 2, modifier.shape === 'octagon' ? 8 : 24);
-  const faceMaterial = new MeshBasicMaterial({ color: 0xffffff, side: DoubleSide });
-  const face = new Mesh(faceGeometry, faceMaterial);
-  face.userData.lightFace = true;
-  face.position.z = 0.006;
-  prepareHelper(face);
-  root.add(face);
-
-  const color = kelvinToRgb(state.colorTempK);
-  faceMaterial.color.setRGB(color[0], color[1], color[2], LinearSRGBColorSpace);
-  if (selected) {
-    const ring = new Mesh(
-      new CircleGeometry(Math.max(modifier.widthM, modifier.heightM) / 2 + 0.07, 32),
-      new MeshBasicMaterial({ color: 0xe8a33d, side: DoubleSide, transparent: true, opacity: 0.88 }),
-    );
-    ring.scale.set(modifier.widthM / Math.max(modifier.widthM, modifier.heightM), modifier.heightM / Math.max(modifier.widthM, modifier.heightM), 1);
-    ring.position.z = 0.012;
-    prepareHelper(ring);
-    root.add(ring);
-
-    const lengthM = 3;
-    const half = Math.min(80, beamAngle(state) / 2) * (Math.PI / 180);
-    const cone = new Mesh(
-      new CylinderGeometry(0.03, Math.max(0.03, lengthM * Math.tan(half)), lengthM, 32, 1, true),
-      new MeshBasicMaterial({ color: 0xe8a33d, side: DoubleSide, transparent: true, opacity: 0.07, depthWrite: false }),
-    );
-    cone.rotation.x = -Math.PI / 2;
-    cone.position.z = lengthM / 2;
-    prepareHelper(cone);
-    root.add(cone);
-  }
-}
-
-function updateLightBodyColor(root: Group, state: LightState): void {
-  const color = kelvinToRgb(state.colorTempK);
-  root.traverse((object) => {
-    if (!(object instanceof Mesh) || !object.userData.lightFace) return;
-    const material = object.material;
-    if (material instanceof MeshBasicMaterial) material.color.setRGB(color[0], color[1], color[2], LinearSRGBColorSpace);
-  });
 }
 
 function makePropSurface(state: PropState): Mesh {
@@ -768,15 +730,6 @@ function bounceColor(hex: string): [number, number, number] {
   if (hex === '#d9aa38') return [1.22, 0.86, 0.42];
   if (hex === '#c8cdd2') return [1, 1, 1];
   return [1, 1, 1];
-}
-
-function prepareHelper(object: Object3D): void {
-  object.layers.set(LAYER_HELPERS);
-  object.userData.editorOnly = true;
-  if (object instanceof Mesh) {
-    object.castShadow = false;
-    object.receiveShadow = false;
-  }
 }
 
 function selectionOwns(
@@ -829,20 +782,4 @@ function livePropDragState(ctx: AppContext, runtime: PropRuntime, state: PropSta
 
 function disposeMaterials(material: Mesh['material'] | Line['material']): void {
   for (const item of Array.isArray(material) ? material : [material]) item.dispose();
-}
-
-function clearGroup(group: Group): void {
-  for (const child of [...group.children]) {
-    group.remove(child);
-    disposeObject(child);
-  }
-}
-
-function disposeObject(object: Object3D): void {
-  object.traverse((child) => {
-    if (!(child instanceof Mesh)) return;
-    child.geometry.dispose();
-    const materials = Array.isArray(child.material) ? child.material : [child.material];
-    for (const material of materials) material.dispose();
-  });
 }
