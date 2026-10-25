@@ -23,12 +23,18 @@ export type EntityRef =
   | { kind: 'subject' }
   | { kind: 'light'; id: string }
   | { kind: 'prop'; id: string }
+  | { kind: 'aim'; owner: { kind: 'camera' } | { kind: 'light'; id: string } | { kind: 'prop'; id: string } }
   | { kind: 'bone'; name: string };
 
 export function sameEntity(a: EntityRef | null, b: EntityRef | null): boolean {
   if (a === null || b === null) return a === b;
   if (a.kind !== b.kind) return false;
   if (a.kind === 'light' || a.kind === 'prop') return a.id === (b as typeof a).id;
+  if (a.kind === 'aim') {
+    const owner = (b as typeof a).owner;
+    if (a.owner.kind === 'camera') return owner.kind === 'camera';
+    return owner.kind === a.owner.kind && a.owner.id === owner.id;
+  }
   if (a.kind === 'bone') return a.name === (b as typeof a).name;
   return true;
 }
@@ -56,6 +62,9 @@ export interface GizmoOptions {
 
 /** The single shared transform gizmo (one at a time, so features never fight over it). */
 export interface Gizmo {
+  readonly toolMode: 'translate' | 'rotate';
+  setToolMode(mode: 'translate' | 'rotate'): void;
+  onToolModeChange(listener: (mode: 'translate' | 'rotate') => void): () => void;
   attach(object: Object3D, options: GizmoOptions): void;
   detach(): void;
   readonly attached: Object3D | null;

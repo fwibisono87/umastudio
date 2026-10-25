@@ -1,6 +1,8 @@
 // Shared, renderer-independent light and incident-meter model. Directions passed to
 // relativeIntensity point from the emitter toward the sample point.
 
+import { Vector3 } from 'three';
+import { aimQuaternion } from './aim';
 import { getModifier } from './modifiers';
 import { continuousLumens, incidentAperture, INCIDENT_METER_C, strobeLumenSeconds } from './photometry';
 import type { CameraState, LightState, SceneDocument, Vec3 } from './types';
@@ -177,17 +179,11 @@ function barnDoorPasses(light: LightState, axis: Vec3, direction: Vec3): boolean
 
   // Each leaf is an independent angular half-plane; that is a simple clipping
   // approximation for the finite rectangle and its projected blade geometry.
-  const reference: Vec3 = Math.abs(axis[1]) > 0.98 ? [0, 0, 1] : [0, 1, 0];
-  let right = unit(cross(reference, axis));
-  let up = unit(cross(axis, right));
-  const roll = (light.rollDeg * Math.PI) / 180;
-  const originalRight = right;
-  right = add(scale(originalRight, Math.cos(roll)), scale(up, Math.sin(roll)));
-  up = add(scale(up, Math.cos(roll)), scale(originalRight, -Math.sin(roll)));
+  const frame = lightAimFrame(light);
 
   const forward = dot(axis, direction);
-  const horizontalDeg = (Math.atan2(dot(direction, right), forward) * 180) / Math.PI;
-  const verticalDeg = (Math.atan2(dot(direction, up), forward) * 180) / Math.PI;
+  const horizontalDeg = (Math.atan2(dot(direction, frame.right), forward) * 180) / Math.PI;
+  const verticalDeg = (Math.atan2(dot(direction, frame.up), forward) * 180) / Math.PI;
   return (
     horizontalDeg <= 90 - doors.right &&
     horizontalDeg >= -(90 - doors.left) &&
@@ -196,13 +192,18 @@ function barnDoorPasses(light: LightState, axis: Vec3, direction: Vec3): boolean
   );
 }
 
+/** World-space emitter frame used by barn doors and other rectangular light math. */
+export function lightAimFrame(light: Pick<LightState, 'position' | 'target' | 'rollDeg'>): { right: Vec3; up: Vec3 } {
+  const orientation = aimQuaternion(light.position, light.target, light.rollDeg);
+  return {
+    right: new Vector3(1, 0, 0).applyQuaternion(orientation).toArray(),
+    up: new Vector3(0, 1, 0).applyQuaternion(orientation).toArray(),
+  };
+}
+
 function unit(v: Vec3): Vec3 {
   const n = length(v);
   return n > 1e-12 ? scale(v, 1 / n) : [0, 0, 0];
-}
-
-function add(a: Vec3, b: Vec3): Vec3 {
-  return [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
 }
 
 function sub(a: Vec3, b: Vec3): Vec3 {
@@ -215,10 +216,6 @@ function scale(v: Vec3, factor: number): Vec3 {
 
 function dot(a: Vec3, b: Vec3): number {
   return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
-}
-
-function cross(a: Vec3, b: Vec3): Vec3 {
-  return [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
 }
 
 function length(v: Vec3): number {
