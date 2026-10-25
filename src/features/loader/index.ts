@@ -2,7 +2,11 @@ import type { AppContext, SubjectModel } from '../../core/context';
 import { loadPhysicalMaterials } from './materials';
 import type { LoadedMaterials, ModelFile } from './materials';
 import { buildSubjectModel } from './build';
+import { applyNormalsMode, type NormalsMode } from './normals';
 import { parsePmx } from './pmx';
+import { bindControls, readout, select } from '../../ui/controls';
+
+const NORMALS_KEY = 'umastudio.loader.normals';
 
 export function install(ctx: AppContext): void {
   const folderInput = document.createElement('input');
@@ -19,6 +23,29 @@ export function install(ctx: AppContext): void {
   filesInput.accept = '.pmx,.png,.jpg,.jpeg,.bmp,.tga';
   filesInput.hidden = true;
   document.body.append(folderInput, filesInput);
+
+  // Shading normals are a viewing preference, not part of the scene, so they live in
+  // localStorage rather than the document.
+  let normalsMode: NormalsMode = readNormalsMode();
+  const applyNormals = () => ctx.subject.model?.meshes.forEach((mesh) => applyNormalsMode(mesh.geometry, normalsMode));
+  const panel = ctx.ui.addPanel({ id: 'model', title: 'Model', order: 105 });
+  const modelName = readout('Model', () => ctx.store.doc.subject.modelName ?? 'Stand-in (load a model)');
+  const normals = select<NormalsMode>({
+    label: 'Normals',
+    title: 'Uma models ship with normals flattened for toon shading; geometric normals let studio light model the face.',
+    options: [
+      { value: 'geometric', label: 'Geometric (realistic)' },
+      { value: 'authored', label: 'Authored (toon)' },
+    ],
+    get: () => normalsMode,
+    set: (value) => {
+      normalsMode = value;
+      writeNormalsMode(value);
+      applyNormals();
+    },
+  });
+  panel.append(modelName.element, normals.element);
+  bindControls(ctx.store, [modelName, normals]);
 
   ctx.ui.addToolbarButton({
     id: 'load-model',
@@ -108,6 +135,7 @@ export function install(ctx: AppContext): void {
       }
 
       const model = buildSubjectModel(pmx, loaded.materials);
+      model.meshes.forEach((mesh) => applyNormalsMode(mesh.geometry, normalsMode));
       const previousModel = ctx.subject.model;
       const previousMaterials = activeMaterials;
       ctx.subject.setModel(model);
@@ -236,4 +264,20 @@ function addDropStyles(): void {
     .viewport.loader-drag-active .loader-drop-highlight { display: grid; }
   `;
   document.head.append(style);
+}
+
+function readNormalsMode(): NormalsMode {
+  try {
+    return localStorage.getItem(NORMALS_KEY) === 'authored' ? 'authored' : 'geometric';
+  } catch {
+    return 'geometric';
+  }
+}
+
+function writeNormalsMode(mode: NormalsMode): void {
+  try {
+    localStorage.setItem(NORMALS_KEY, mode);
+  } catch {
+    // A viewing preference; losing it is harmless.
+  }
 }
