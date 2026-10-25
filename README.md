@@ -6,8 +6,14 @@ A browser-based photo-studio simulator in the spirit of
 lights in 3D space, and produce both a lighting diagram ("shot map") and a high-quality
 physically based render of the photo.
 
-> Status: planning. No code yet — see [`docs/DESIGN.md`](docs/DESIGN.md) for the design and
-> [`docs/PLAN.md`](docs/PLAN.md) for the build plan.
+> Status: early build. The app skeleton runs; features are landing wave by wave — see
+> [`docs/DESIGN.md`](docs/DESIGN.md) for the design and [`docs/PLAN.md`](docs/PLAN.md) for
+> the build plan.
+
+```sh
+pnpm install
+pnpm dev        # http://localhost:5173
+```
 
 ## Done means
 

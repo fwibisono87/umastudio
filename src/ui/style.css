@@ -1,0 +1,321 @@
+:root {
+  --bg: #16181b;
+  --panel: #1f2226;
+  --panel-raised: #272b30;
+  --border: #33383e;
+  --text: #d9dde2;
+  --text-dim: #8b929a;
+  --accent: #e8a33d;
+  --accent-dim: #8a6427;
+  --danger: #d9534f;
+  --radius: 4px;
+  --font: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font: 13px/1.4 var(--font);
+  overflow: hidden;
+}
+
+.app {
+  display: grid;
+  grid-template-columns: 1fr 320px;
+  grid-template-rows: 40px 1fr 24px;
+  grid-template-areas:
+    'toolbar toolbar'
+    'viewport sidebar'
+    'status status';
+  height: 100vh;
+}
+
+/* ---------------------------------------------------------------- toolbar */
+
+.toolbar {
+  grid-area: toolbar;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+}
+
+.toolbar-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.toolbar-spacer {
+  flex: 1;
+}
+
+.app-name {
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  margin-right: 12px;
+  color: var(--accent);
+}
+
+.tool-button,
+.control-button {
+  background: var(--panel-raised);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 4px 10px;
+  font: inherit;
+  cursor: pointer;
+}
+
+.tool-button:hover,
+.control-button:hover {
+  border-color: var(--accent-dim);
+}
+
+.tool-button.active {
+  background: var(--accent-dim);
+  border-color: var(--accent);
+}
+
+.tool-button:disabled,
+.control-button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* ---------------------------------------------------------------- viewport */
+
+.viewport {
+  grid-area: viewport;
+  position: relative;
+  overflow: hidden;
+  min-width: 0;
+  min-height: 0;
+}
+
+.viewport canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.viewport-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* ---------------------------------------------------------------- sidebar */
+
+.sidebar {
+  grid-area: sidebar;
+  background: var(--panel);
+  border-left: 1px solid var(--border);
+  overflow-y: auto;
+}
+
+.panel {
+  border-bottom: 1px solid var(--border);
+}
+
+.panel-header {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  color: var(--text);
+  font: 600 12px/1 var(--font);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 10px 12px;
+  cursor: pointer;
+}
+
+.panel-header::before {
+  content: '▾';
+  display: inline-block;
+  width: 14px;
+  color: var(--text-dim);
+}
+
+.panel.collapsed .panel-header::before {
+  content: '▸';
+}
+
+.panel.collapsed .panel-body {
+  display: none;
+}
+
+.panel-body {
+  padding: 0 12px 12px;
+}
+
+/* ---------------------------------------------------------------- controls */
+
+.control-group {
+  margin-top: 8px;
+}
+
+.control-group-title {
+  color: var(--text-dim);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 4px;
+}
+
+.control-row {
+  display: grid;
+  grid-template-columns: 100px 1fr auto;
+  align-items: center;
+  gap: 6px;
+  min-height: 26px;
+}
+
+.control-label {
+  color: var(--text-dim);
+}
+
+.control-input {
+  width: 100%;
+  min-width: 0;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 3px 6px;
+  font: inherit;
+}
+
+.control-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.control-slider {
+  width: 100%;
+  accent-color: var(--accent);
+}
+
+.control-unit,
+.control-readout {
+  color: var(--text-dim);
+  font-family: var(--mono);
+  font-size: 12px;
+  min-width: 3em;
+  text-align: right;
+}
+
+.control-value {
+  font-family: var(--mono);
+  grid-column: 2 / 4;
+}
+
+.control-check {
+  justify-self: start;
+  accent-color: var(--accent);
+}
+
+/* ---------------------------------------------------------------- status bar */
+
+.statusbar {
+  grid-area: status;
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  padding: 0 10px;
+  background: var(--panel);
+  border-top: 1px solid var(--border);
+  color: var(--text-dim);
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+/* ---------------------------------------------------------------- dialogs */
+
+.dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgb(0 0 0 / 0.55);
+  display: grid;
+  place-items: center;
+  z-index: 10;
+}
+
+.dialog {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  width: min(520px, calc(100vw - 32px));
+  max-height: calc(100vh - 64px);
+  display: flex;
+  flex-direction: column;
+}
+
+.dialog.wide {
+  width: min(1100px, calc(100vw - 32px));
+}
+
+.dialog-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.dialog-header h2 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.dialog-close {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  font-size: 20px;
+  cursor: pointer;
+}
+
+.dialog-body {
+  padding: 14px;
+  overflow: auto;
+}
+
+/* ---------------------------------------------------------------- toasts */
+
+.toasts {
+  position: fixed;
+  bottom: 36px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  z-index: 20;
+}
+
+.toast {
+  background: var(--panel-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 6px 14px;
+}
+
+.toast.error {
+  border-color: var(--danger);
+}

@@ -8,23 +8,28 @@ the build/typecheck and in Chrome (screenshots, console, rendered state) before 
 
 | Wave | Lane | Size | Who |
 |---|---|---|---|
-| 0 | Scene document, units, project skeleton (Vite + TS + three) | S | Claude — every other lane builds on this contract |
-| 1 | PMX/UmaViewer loader → physical materials, textures, alpha | M | Codex (GPT Luna) |
-| 1 | Physical camera, exposure maths, live-view DoF | M | Codex (GPT Luna); exposure maths reviewed by hand |
-| 2 | Lights: power units, power steps, modifier presets, placement | M–L | Codex |
-| 2 | Posing: bone picker, FK gizmo, limb IK, presets, mirroring, expressions | M–L | Codex |
-| 2 | Shot map: SVG diagram + settings table + export | S–M | MiMo-V2.6-Pro (self-contained) |
-| 3 | HQ render via path tracer (skinned → static bake, physical camera, area lights) | M | Codex — riskiest lane |
-| 3 | Scene save/load, UI cohesion pass | S–M | MiMo-V2.6-Pro |
+| 0 | Scene document, units, photometry, project skeleton (Vite + TS + three) | S | Claude — every other lane builds on this contract. **Done.** |
+| 1 | PMX/UmaViewer loader → physical materials, textures, alpha, bone map | M | Codex (GPT Luna) |
+| 1 | Physical camera, exposure UI, live-view DoF, flash-sync band | M | Codex (GPT Luna); exposure maths reviewed by hand |
+| 1 | Lights: power units, power steps, modifier presets, placement, props | M–L | Codex (GPT Luna) |
+| 1 | Shot map: SVG diagram + settings table + export | S–M | MiMo-V2.6-Pro (self-contained) |
+| 2 | Posing: bone picker, FK gizmo, limb IK, presets, mirroring, expressions | M–L | Codex — needs the loader |
+| 2 | HQ render via path tracer (skinned → static bake, physical camera, area lights) | M | Codex — needs loader, camera, lights; riskiest lane |
+| 2 | Scene save/load, autosave | S | Codex |
+| 3 | UI cohesion pass over the integrated app | S | Claude + one lane |
 
-Wave 1 lanes run in parallel, wave 2 lanes run in parallel. Rough total: ~8 lanes,
-3–5 working sessions.
+Wave 0 put everything the lanes share into `src/scene/` (document types, photometry,
+modifier table) and `src/core/` (store, views, picking, gizmo), and gave every feature its
+own folder, so lights and the shot map no longer depend on the loader or camera and moved
+up to wave 1. Lanes within a wave run in parallel. Rough total: ~8 lanes.
 
 ## Risks
 
-1. **Exposure calibration.** Code that runs is not code that's right. "500 Ws in a 90 cm
-   softbox at 2 m → f/8 at ISO 100" has to be checked against light-meter rules of
-   thumb, then against a photographer's eye.
+1. **Exposure calibration.** Code that runs is not code that's right. The reference
+   setups in `src/scene/photometry.ts` (500 Ws at 2 m, ISO 100: about f/11 in a ~90 cm
+   softbox, about f/22 in a standard reflector) come from the incident-meter equation
+   and xenon efficacy, and still need checking against a photographer's eye. (The
+   earlier "softbox → f/8" target was about a stop low.)
 2. **Path tracer + skinned meshes.** The posed mesh must be baked to static geometry and
    the converted materials must survive the hand-off. Most likely lane to need a retry.
 3. **Look.** Agents can't see their output. Each wave ends with a human look at the

@@ -14,6 +14,21 @@ All app state lives in one serialisable **scene document** (JSON). Every feature
 and writes that document; nothing else is shared between features. This is what lets the
 work be built in parallel lanes (see `PLAN.md`), and it doubles as the save format.
 
+### Code map
+
+- `src/scene/` — the contract: document types (`types.ts`), defaults and loading
+  (`document.ts`), the photometric chain from Ws to pixels (`photometry.ts`), units and
+  photographic scales (`units.ts`), the modifier table (`modifiers.ts`).
+- `src/core/` — `AppContext` (`context.ts`), the store with undo (`store.ts`), renderer,
+  views, picking and the shared gizmo (`app.ts`), the set and subject anchor (`studio.ts`).
+- `src/ui/` — page shell and bound form controls.
+- `src/features/<name>/` — one folder per feature, each exporting `install(ctx)`.
+
+Rendering is **pre-exposed**: light intensities are multiplied by the camera's exposure
+scale before they reach three.js, so the renderer's exposure stays at 1 and the path
+tracer gets the same numbers. A correctly metered 18% grey card renders at 0.18; the
+stand-in mannequin is exactly that grey.
+
 ### Units — fixed before anything else is written
 
 | Quantity | Unit |
