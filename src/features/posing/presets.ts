@@ -11,52 +11,62 @@ export interface PosePreset {
  * ±X and whose bone-local frames are identity rotations.
  */
 export const POSE_PRESETS: readonly PosePreset[] = [
+  // Clear every bone offset and leave the subject at the document root.
   { name: 'Rest', bones: {}, rootOffset: [0, 0, 0] },
+  // Let both arms hang beside the torso with a small forward bend at the elbows.
   {
     name: 'Relaxed standing',
     bones: {
-      Arm_L: [0, 0, -82], Elbow_L: [0, 0, -10],
-      Arm_R: [0, 0, 82], Elbow_R: [0, 0, 10],
-      Shoulder_L: [0, 0, -4], Shoulder_R: [0, 0, 4],
+      Arm_L: [-10, 0, -82], Elbow_L: [0, -10, 0],
+      Arm_R: [-10, 0, 82], Elbow_R: [0, 10, 0],
     },
     rootOffset: [0, 0, 0],
   },
+  // Shift weight to the straighter right leg and counter-tilt the shoulders.
   {
     name: 'Contrapposto',
     bones: {
       Hip: [0, 0, -4], Waist: [0, 0, 4], Spine: [0, 0, 2], Chest: [0, 0, 2],
-      Arm_L: [0, 0, -78], Elbow_L: [0, 0, -12],
-      Arm_R: [0, 0, 82], Elbow_R: [0, 0, 10],
+      Arm_L: [-10, 20, -82], Elbow_L: [0, -10, 0],
+      Arm_R: [-10, -20, 82], Elbow_R: [0, 10, 0],
       Knee_L: [0, 0, 5],
     },
-    rootOffset: [-0.035, 0, 0.015],
+    rootOffset: [0, 0, 0.015],
   },
+  // Fold the forearms forward onto the waist while keeping the elbows flared out.
   {
     name: 'Hands on hips',
     bones: {
-      Arm_L: [0, 0, -75], Elbow_L: [0, 0, -100], Wrist_L: [0, 0, 16],
-      Arm_R: [0, 0, 75], Elbow_R: [0, 0, 100], Wrist_R: [0, 0, -16],
+      Arm_L: [30, -30, -45], Elbow_L: [0, -90, 0],
+      Arm_R: [30, 30, 45], Elbow_R: [0, 90, 0],
     },
     rootOffset: [0, 0, 0],
   },
+  // Turn each upper arm down and fold the forearms across the chest at two heights.
   {
     name: 'Arms crossed',
     bones: {
-      Arm_L: [0, 0, 26], Elbow_L: [0, 0, 128], Wrist_L: [0, 0, -18],
-      Arm_R: [0, 0, -26], Elbow_R: [0, 0, -128], Wrist_R: [0, 0, 18],
+      Arm_L: [-5, -60, -70], Elbow_L: [0, -110, 0],
+      Arm_R: [-5, 60, 70], Elbow_R: [0, 95, 0],
     },
     rootOffset: [0, 0, 0],
   },
+  // Turn the torso and head left while keeping both arms in the relaxed pose.
   {
     name: 'Looking over shoulder',
-    bones: { Spine: [0, -8, 0], Chest: [0, -12, 0], Neck: [0, 18, 0], Head: [0, 38, 0] },
+    bones: {
+      Spine: [0, 8, 0], Chest: [0, 12, 0], Neck: [0, 12, 0], Head: [0, 22, 0],
+      Arm_L: [-10, 0, -82], Elbow_L: [0, -10, 0],
+      Arm_R: [-10, 0, 82], Elbow_R: [0, 10, 0],
+    },
     rootOffset: [0, 0, 0],
   },
+  // Bring the left wrist forward to the chin and leave the right arm hanging.
   {
     name: 'Hand to chin',
     bones: {
-      Arm_L: [0, 0, 93], Elbow_L: [0, 0, 76], Wrist_L: [0, 0, -12],
-      Shoulder_L: [0, 0, -8],
+      Arm_L: [-15, -60, -55], Elbow_L: [0, -135, 0],
+      Arm_R: [-10, 0, 82], Elbow_R: [0, 10, 0],
     },
     rootOffset: [0, 0, 0],
   },
