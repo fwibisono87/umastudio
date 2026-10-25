@@ -33,14 +33,15 @@ export const INCIDENT_METER_C = 250;
 /**
  * Luminous energy a studio strobe emits per watt-second of rated energy, bare tube.
  * Xenon tubes reach ~30-50 lm/W but capacitor-to-light losses and the rating
- * conventions of studio heads bring it down. Calibrated against two reference
+ * conventions of studio heads bring it down. Set to 18 lm·s/Ws (from 25) so the
+ * calibrated modifier transmissions stay in a plausible range. Calibrated against two
  * setups (both ISO 100, incident meter at the subject):
  *   - 500 Ws in a ~90 cm softbox at 2 m → about f/11
  *   - 500 Ws in a standard 7" reflector at 2 m → about f/22
  * The modifier table's lossStops and beam angles are tuned alongside this constant;
- * see photometry.test.ts.
+ * see lightModel.test.ts.
  */
-export const STROBE_LM_S_PER_WS = 25;
+export const STROBE_LM_S_PER_WS = 18;
 
 /** Energy actually released at the current power setting, Ws. */
 export function strobeEnergyWs(output: StrobeOutput): number {
