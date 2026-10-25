@@ -2,7 +2,6 @@ import {
   Color,
   DoubleSide,
   FrontSide,
-  LinearSRGBColorSpace,
   MeshPhysicalMaterial,
   SRGBColorSpace,
   TextureLoader,
@@ -37,6 +36,19 @@ const styles: Record<'skin' | 'hair' | 'cloth' | 'eyes' | 'metal', MaterialStyle
   cloth: { roughness: 0.8, metalness: 0, sheen: 0.04, sheenRoughness: 0.85, clearcoat: 0 },
   eyes: { roughness: 0.2, metalness: 0, sheen: 0.05, sheenRoughness: 0.35, clearcoat: 0.65 },
   metal: { roughness: 0.28, metalness: 0.72, sheen: 0, sheenRoughness: 0.4, clearcoat: 0.12 },
+};
+
+/**
+ * Stand-in albedo (sRGB) for untextured materials whose PMX diffuse is plain white, as
+ * UmaViewer writes it. Pure white reflects more light than any real surface, which would
+ * make every exposure look a stop or more hot; these are plausible real-world values.
+ */
+const fallbackAlbedo: Record<keyof typeof styles, string> = {
+  skin: '#d9b8a3',
+  hair: '#8a7466',
+  cloth: '#b4b4b4',
+  eyes: '#4f4038',
+  metal: '#c0c0c0',
 };
 
 /** Resolves PMX texture paths, decodes usable colour maps and creates physical materials. */
@@ -123,9 +135,12 @@ function makeMaterial(
   const transparent = diffuse[3] < 0.999 || (Boolean(map) && alphaHint);
   const overlay = /eyehi|lash|eyelash|brow|mayu/.test(name);
   const hasCutout = Boolean(map) && /alpha0|lash|eyelash|brow|mayu/.test(name);
-  return new MeshPhysicalMaterial({
-    color: new Color().setRGB(diffuse[0], diffuse[1], diffuse[2], LinearSRGBColorSpace),
-    map,
+  // PMX diffuse colours are authored as sRGB.
+  const color = new Color().setRGB(diffuse[0], diffuse[1], diffuse[2], SRGBColorSpace);
+  const plainWhite = diffuse[0] > 0.99 && diffuse[1] > 0.99 && diffuse[2] > 0.99;
+  if (!map && plainWhite) color.set(fallbackAlbedo[category]);
+  const material = new MeshPhysicalMaterial({
+    color,
     opacity: diffuse[3],
     transparent,
     alphaTest: hasCutout ? 0.08 : 0,
@@ -140,6 +155,11 @@ function makeMaterial(
     polygonOffsetFactor: overlay ? -1 : 0,
     polygonOffsetUnits: overlay ? -1 : 0,
   });
+  if (map) material.map = map;
+  // Overlays (eye highlights, lashes, brows) are alpha-cut quads: without their texture
+  // they would cover the face with blank planes.
+  if (!map && overlay) material.visible = false;
+  return material;
 }
 
 function classify(name: string): keyof typeof styles {
