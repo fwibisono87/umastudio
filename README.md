@@ -55,3 +55,29 @@ UmaViewer export.
 ```sh
 python3 tools/pmxinfo.py "path/to/model.pmx"
 ```
+
+## License
+
+MIT — see [`LICENSE`](LICENSE). In plain words: take it, fork it, sell it, just keep the
+copyright notice. That file is the legal part; everything below is not.
+
+```
+/*
+ * Your warranty is now void.
+ *
+ * I am not responsible for blown-out highlights, crushed shadows, a client
+ * shoot that went sideways because the sim said f/8 and your strobe said
+ * f/5.6, a melted GPU from leaving the path tracer running overnight, or
+ * thermonuclear war because your alarm didn't go off while you were
+ * dialling in a stripbox at 3 AM.
+ *
+ * The real light meter always wins. YOU are choosing to trust a browser tab
+ * with your exposure, and if you point the finger at me for ruining your
+ * shoot, I will laugh at you.
+ */
+```
+
+Kode ini berbasis GSGSCICILTT. Belum tentu solusi terbaik, dan jelas bukan untuk
+konsumsi Scopus. Harap menanggung sendiri segala risiko.
+
+The character models remain © Cygames and are not covered by this license.
