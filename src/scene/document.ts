@@ -4,7 +4,8 @@ import { SCENE_VERSION, type LightState, type SceneDocument } from './types';
 
 /**
  * A one-light portrait setup: 85 mm at 3.5 m, f/8 1/125 ISO 100, a 500 Ws strobe in a
- * 90×120 softbox 45° camera-left. The subject stands at the origin facing +Z.
+ * 90×120 softbox 45° camera-right (+X is the photographer's right when the camera
+ * looks down -Z). The subject stands at the origin facing +Z.
  */
 export function createDefaultScene(): SceneDocument {
   return {
