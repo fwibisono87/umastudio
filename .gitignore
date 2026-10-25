@@ -1,0 +1,11 @@
+# Character models and textures are © Cygames — never commit them
+*.pmx
+*.pmd
+*.vmd
+Texture2D/
+
+node_modules/
+dist/
+.vite/
+*.log
+.DS_Store
