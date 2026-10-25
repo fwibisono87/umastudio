@@ -25,8 +25,8 @@ interface FieldBase<T> {
   title?: string;
 }
 
-function row(label: string, input: HTMLElement, title?: string, suffix?: HTMLElement): HTMLElement {
-  const attrs: Record<string, string> = { class: 'control-row' };
+function row(label: string, input: HTMLElement, title?: string, suffix?: HTMLElement, className = ''): HTMLElement {
+  const attrs: Record<string, string> = { class: `control-row${className ? ` ${className}` : ''}` };
   if (title) attrs.title = title;
   const children: HTMLElement[] = [el('span', { class: 'control-label' }, [label]), input];
   if (suffix) children.push(suffix);
@@ -119,7 +119,7 @@ export function checkbox(o: FieldBase<boolean>): Control {
     input.checked = o.get();
   };
   refresh();
-  return { element: row(o.label, input, o.title), refresh };
+  return { element: row(o.label, input, o.title, undefined, 'control-check-row'), refresh };
 }
 
 export function textField(o: FieldBase<string>): Control {
@@ -146,6 +146,13 @@ export function button(label: string, onClick: () => void, title?: string): HTML
   const b = el('button', { type: 'button', class: 'control-button', title: title ?? label }, [label]);
   b.addEventListener('click', onClick);
   return b;
+}
+
+/** Equal-width sidebar buttons that stay on one line and truncate when space is tight. */
+export function buttonRow(buttons: readonly HTMLButtonElement[], columns = 2): HTMLElement {
+  const row = el('div', { class: 'control-button-row' }, [...buttons]);
+  row.style.setProperty('--button-columns', String(Math.max(1, Math.floor(columns))));
+  return row;
 }
 
 /** A titled group of controls inside a panel. */

@@ -541,7 +541,7 @@ function buildLightBody(root: Group, state: LightState, selected: boolean): void
   if (selected) {
     const ring = new Mesh(
       new CircleGeometry(Math.max(modifier.widthM, modifier.heightM) / 2 + 0.07, 32),
-      new MeshBasicMaterial({ color: 0xffc45b, side: DoubleSide, transparent: true, opacity: 0.88 }),
+      new MeshBasicMaterial({ color: 0xe8a33d, side: DoubleSide, transparent: true, opacity: 0.88 }),
     );
     ring.scale.set(modifier.widthM / Math.max(modifier.widthM, modifier.heightM), modifier.heightM / Math.max(modifier.widthM, modifier.heightM), 1);
     ring.position.z = 0.012;
@@ -552,7 +552,7 @@ function buildLightBody(root: Group, state: LightState, selected: boolean): void
     const half = Math.min(80, beamAngle(state) / 2) * (Math.PI / 180);
     const cone = new Mesh(
       new CylinderGeometry(0.03, Math.max(0.03, lengthM * Math.tan(half)), lengthM, 32, 1, true),
-      new MeshBasicMaterial({ color: 0xffd77a, side: DoubleSide, transparent: true, opacity: 0.07, depthWrite: false }),
+      new MeshBasicMaterial({ color: 0xe8a33d, side: DoubleSide, transparent: true, opacity: 0.07, depthWrite: false }),
     );
     cone.rotation.x = -Math.PI / 2;
     cone.position.z = lengthM / 2;

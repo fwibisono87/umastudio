@@ -1,5 +1,5 @@
 import type { AppContext } from '../../core/context';
-import { button, group, numberField, select, slider, textField, type Control } from '../../ui/controls';
+import { button, buttonRow, group, numberField, select, slider, textField, type Control } from '../../ui/controls';
 import { el } from '../../ui/dom';
 import { createLight, nextId } from '../../scene/document';
 import { GRID_ANGLES_DEG, MODIFIERS, getModifier } from '../../scene/modifiers';
@@ -21,7 +21,7 @@ export function installLightsPanel(ctx: AppContext): void {
   const propList = el('div', { class: 'prop-list' });
   const propDetails = el('div', { class: 'prop-details' });
   const meterDetails = el('div', { class: 'meter-details' });
-  let meterMode: MeterMode = 'toward-each-light';
+  let meterMode: MeterMode = 'toward-camera';
   let detailControls: Control[] = [];
   let renderedSelection = '\0';
 
@@ -42,15 +42,15 @@ export function installLightsPanel(ctx: AppContext): void {
   const addContinuous = button('Add continuous', () => addLight('continuous'));
   const duplicate = button('Duplicate', duplicateSelectedLight);
   const deleteLight = button('Delete', deleteSelectedLight);
-  const lightButtons = el('div', { class: 'control-row' }, [addStrobe, addContinuous, duplicate, deleteLight]);
+  const lightButtons = buttonRow([addStrobe, addContinuous, duplicate, deleteLight], 2);
   const lightsGroup = group('Lights', [lightList, lightButtons, lightDetails]);
-  const propsButtons = el('div', { class: 'control-row' }, [
+  const propsButtons = buttonRow([
     button('Bounce white', () => addProp('bounce', '#ffffff')),
     button('Bounce silver', () => addProp('bounce', '#c8cdd2')),
     button('Bounce gold', () => addProp('bounce', '#d9aa38')),
     button('Flag', () => addProp('flag', '#101014')),
     button('Diffusion', () => addProp('diffusion', '#ffffff')),
-  ]);
+  ], 2);
   const propsGroup = group('Props', [propsButtons, propList, propDetails]);
   const meterGroup = group('Light meter', [meterModeControl, meterDetails]);
   body.append(lightsGroup, meterGroup, propsGroup);

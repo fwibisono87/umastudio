@@ -3,8 +3,10 @@
 // table for the dialog and the print view.
 
 import { getModifier } from '../../scene/modifiers';
+import { meterReading } from '../../scene/lightModel';
+import { incidentAperture } from '../../scene/photometry';
 import type { LightState, PropState, SceneDocument } from '../../scene/types';
-import { formatAperture, formatPowerStops, formatShutter } from '../../scene/units';
+import { APERTURE_STOPS, formatAperture, formatPowerStops, formatShutter, nearestStop } from '../../scene/units';
 import { angleFromCameraAxisDeg, distance3, heightOf } from './geometry';
 
 export interface PairRow {
@@ -24,6 +26,7 @@ export interface LightRow {
   output: string;
   modifier: string;
   colorTemp: string;
+  incident: string;
   distanceM: string;
   heightM: string;
   /** e.g. "45° camera-left". */
@@ -55,12 +58,16 @@ export function settingsRows(doc: SceneDocument): SettingsRow[] {
     { kind: 'pair', section: 'Camera', label: 'Aperture', value: formatAperture(cam.aperture) },
     { kind: 'pair', section: 'Camera', label: 'Shutter', value: formatShutter(cam.shutterS) },
     { kind: 'pair', section: 'Camera', label: 'ISO', value: num(cam.iso) },
+    { kind: 'pair', section: 'Camera', label: 'White balance', value: `${num(cam.whiteBalanceK)} K` },
     { kind: 'pair', section: 'Camera', label: 'Focus distance', value: metres(cam.lens.focusDistanceM) },
     { kind: 'pair', section: 'Camera', label: 'Distance to subject', value: metres(distance3(cam.position, subject)) },
     { kind: 'pair', section: 'Camera', label: 'Height', value: metres(heightOf(cam.position)) },
   ];
 
-  const lightRows: LightRow[] = doc.lights.map((light) => lightRow(doc, light));
+  const face: [number, number, number] = [subject[0], subject[1] + 1.35, subject[2]];
+  const meter = meterReading(doc, face, 'toward-camera');
+  const readings = new Map(meter.lights.map((reading) => [reading.id, reading.luxSeconds]));
+  const lightRows: LightRow[] = doc.lights.map((light) => lightRow(doc, light, readings.get(light.id)));
 
   const propRows: PropRow[] = doc.props.map((prop) => ({
     kind: 'prop',
@@ -84,7 +91,7 @@ export function settingsRows(doc: SceneDocument): SettingsRow[] {
   return [...cameraRows, ...lightRows, ...propRows, ...environmentRows];
 }
 
-function lightRow(doc: SceneDocument, light: LightState): LightRow {
+function lightRow(doc: SceneDocument, light: LightState, incidentLuxSeconds: number | undefined): LightRow {
   return {
     kind: 'light',
     section: 'Lights',
@@ -93,6 +100,7 @@ function lightRow(doc: SceneDocument, light: LightState): LightRow {
     output: outputLabel(light),
     modifier: fullModifierLabel(light),
     colorTemp: `${num(light.colorTempK)} K`,
+    incident: light.enabled && incidentLuxSeconds !== undefined ? meterAperture(incidentLuxSeconds, doc.camera.iso) : 'Off',
     distanceM: metres(distance3(light.position, doc.subject.position)),
     heightM: metres(heightOf(light.position)),
     angle: angleLabel(angleFromCameraAxisDeg(doc, light.position)),
@@ -134,10 +142,16 @@ function num(v: number): string {
   return String(Math.round(v * 100) / 100);
 }
 
+function meterAperture(luxSeconds: number, iso: number): string {
+  if (luxSeconds <= 0) return 'No light';
+  const aperture = incidentAperture(luxSeconds, iso);
+  return formatAperture(nearestStop(aperture, APERTURE_STOPS));
+}
+
 // ---------------------------------------------------------------- DOM rendering
 
 const SECTIONS = ['Camera', 'Lights', 'Props', 'Environment'] as const;
-const TABLE_COLUMNS = 8;
+const TABLE_COLUMNS = 9;
 
 export function renderSettingsTable(rows: readonly SettingsRow[]): HTMLTableElement {
   const table = document.createElement('table');
@@ -172,10 +186,10 @@ export function renderSettingsTable(rows: readonly SettingsRow[]): HTMLTableElem
         body.append(tr);
       }
     } else if (first && first.kind === 'light') {
-      body.append(columnHeader(['Name', 'Type', 'Output', 'Modifier', 'CCT', 'Distance', 'Height', 'Angle']));
+      body.append(columnHeader(['Name', 'Type', 'Output', 'Modifier', 'CCT', 'Meter', 'Distance', 'Height', 'Angle']));
       for (const row of sectionRows) {
         if (row.kind !== 'light') continue;
-        body.append(dataRow([row.name, row.type, row.output, row.modifier, row.colorTemp, row.distanceM, row.heightM, row.angle]));
+        body.append(dataRow([row.name, row.type, row.output, row.modifier, row.colorTemp, row.incident, row.distanceM, row.heightM, row.angle]));
       }
     } else if (first && first.kind === 'prop') {
       body.append(columnHeader(['Name', 'Kind', 'Size']));

@@ -36,6 +36,8 @@
 
 .shotmap-settings {
   width: 100%;
+  min-width: 760px;
+  table-layout: fixed;
   border-collapse: collapse;
   font-size: 12px;
 }
@@ -46,6 +48,7 @@
   text-align: left;
   vertical-align: top;
   border-bottom: 1px solid var(--border);
+  overflow-wrap: anywhere;
 }
 
 .shotmap-settings .shotmap-section th {
@@ -60,7 +63,18 @@
 .shotmap-settings .shotmap-cols th {
   color: var(--text-dim);
   font-weight: 600;
+  white-space: normal;
 }
+
+.shotmap-settings .shotmap-cols th:nth-child(1) { width: 85px; }
+.shotmap-settings .shotmap-cols th:nth-child(2) { width: 62px; }
+.shotmap-settings .shotmap-cols th:nth-child(3) { width: 100px; }
+.shotmap-settings .shotmap-cols th:nth-child(4) { width: 145px; }
+.shotmap-settings .shotmap-cols th:nth-child(5) { width: 62px; }
+.shotmap-settings .shotmap-cols th:nth-child(6) { width: 62px; }
+.shotmap-settings .shotmap-cols th:nth-child(7) { width: 70px; }
+.shotmap-settings .shotmap-cols th:nth-child(8) { width: 62px; }
+.shotmap-settings .shotmap-cols th:nth-child(9) { width: 110px; }
 
 .shotmap-settings .shotmap-pair th {
   color: var(--text-dim);
@@ -104,6 +118,8 @@
 
   .shotmap-print table {
     width: 100%;
+    min-width: 0;
+    table-layout: fixed;
     margin-top: 12px;
     border-collapse: collapse;
     color: #111;

@@ -10,7 +10,7 @@ import {
 import type { AppContext, SubjectModel } from '../../core/context';
 import { LAYER_HELPERS } from '../../core/context';
 import type { Control } from '../../ui/controls';
-import { button, checkbox, group, numberField } from '../../ui/controls';
+import { button, buttonRow, checkbox, group, numberField } from '../../ui/controls';
 import { el } from '../../ui/dom';
 import type { PoseState, Vec3 } from '../../scene/types';
 import { DEG2RAD } from '../../scene/units';
@@ -105,7 +105,7 @@ export function install(ctx: AppContext): void {
   hipProxy.add(hipMarker);
   ctx.picking.register(hipProxy, { kind: 'bone', name: `${IK_PREFIX}Hip` });
 
-  const subjectPanel = ctx.ui.addPanel({ id: 'pose', title: 'Pose', order: 120 });
+  const subjectPanel = ctx.ui.addPanel({ id: 'pose', title: 'Pose', order: 120, collapsed: true });
   const positionX = numberField({
     label: 'Position X', unit: 'm', min: -10, max: 10, step: 0.01, precision: 2,
     get: () => ctx.store.doc.subject.position[0],
@@ -149,7 +149,7 @@ export function install(ctx: AppContext): void {
   const poseOptions = el('div', { class: 'pose-options' }, [poseToggle.element, swingToggle.element, plantedToggle.element]);
   subjectPanel.append(poseOptions);
 
-  const presetButtons = el('div', { class: 'posing-button-grid' });
+  const presetButtons = buttonRow([], 2);
   for (const preset of POSE_PRESETS) {
     presetButtons.append(button(preset.name, () => {
       ctx.store.update((doc) => {
@@ -160,7 +160,7 @@ export function install(ctx: AppContext): void {
   }
   subjectPanel.append(group('Pose presets', [presetButtons]));
 
-  const poseActions = el('div', { class: 'posing-button-grid' }, [
+  const poseActions = buttonRow([
     button('Mirror pose', () => {
       ctx.store.update((doc) => {
         doc.subject.pose.bones = mirrorPoseOffsets(doc.subject.pose.bones);
@@ -171,7 +171,7 @@ export function install(ctx: AppContext): void {
     button('Copy left → right', () => copySide('L')),
     button('Copy right → left', () => copySide('R')),
     button('Reset pose', resetPose),
-  ]);
+  ], 2);
   subjectPanel.append(group('Pose tools', [poseActions]));
 
   const boneSearch = el('input', { type: 'search', class: 'posing-search', placeholder: 'Search bones…', 'aria-label': 'Search bones' });
@@ -182,10 +182,10 @@ export function install(ctx: AppContext): void {
   subjectPanel.append(group('Bones', [boneSection]));
   boneSearch.addEventListener('input', () => renderBoneList());
 
-  const expressionPanel = ctx.ui.addPanel({ id: 'expressions', title: 'Expression', order: 125 });
+  const expressionPanel = ctx.ui.addPanel({ id: 'expressions', title: 'Expression', order: 125, collapsed: true });
   const expressionSearch = el('input', { type: 'search', class: 'posing-search', placeholder: 'Search expressions…', 'aria-label': 'Search expressions' });
   const expressionList = el('div', { class: 'posing-expression-list' });
-  const expressionPresetButtons = el('div', { class: 'posing-button-grid' });
+  const expressionPresetButtons = buttonRow([], 2);
   const resetExpressionButton = button('Reset expression', () => {
     ctx.store.update((doc) => { doc.subject.morphs = {}; }, { label: 'reset expression' });
   });
@@ -613,10 +613,10 @@ export function install(ctx: AppContext): void {
       selectedRanges.push(control);
       selectedBoneControls.append(control.element);
     }
-    selectedBoneControls.append(el('div', { class: 'posing-button-grid' }, [
+    selectedBoneControls.append(buttonRow([
       button('Reset bone', () => ctx.store.update((doc) => { delete doc.subject.pose.bones[name]; }, { label: `reset bone ${name}` })),
       button('Reset pose', resetPose),
-    ]));
+    ], 2));
     selectedRanges.forEach((control) => control.refresh());
   }
 
@@ -838,8 +838,6 @@ function addPoseStyles(): void {
   if (document.getElementById('posing-styles')) return;
   const style = el('style', { id: 'posing-styles' });
   style.textContent = `
-    .posing-button-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5px; }
-    .posing-button-grid .control-button { min-width: 0; white-space: normal; }
     .pose-options { display: grid; gap: 2px; }
     .posing-search { box-sizing: border-box; width: 100%; margin: 3px 0 7px; padding: 6px 8px; color: inherit; background: #171d27; border: 1px solid #394354; border-radius: 4px; }
     .posing-bone-list, .posing-expression-list { max-height: 260px; overflow: auto; }
@@ -847,11 +845,11 @@ function addPoseStyles(): void {
     .posing-bone-group > summary, .posing-expression-group > summary { cursor: pointer; color: #c4cfde; font-size: 12px; padding: 3px 0; }
     .posing-bone-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 3px; padding: 2px 0 6px; }
     .pose-bone-option { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; padding: 4px 6px; }
-    .pose-bone-option.selected { border-color: #70d7ff; color: #c9f1ff; background: #203544; }
+    .pose-bone-option.selected { border-color: var(--accent); color: #fff0d4; background: var(--accent-dim); }
     .posing-selected-bone { margin-top: 9px; }
     .posing-selected-title { margin-bottom: 4px; font-weight: 650; color: #e7eff8; }
-    .pose-range-row { grid-template-columns: minmax(54px, 1fr) minmax(60px, 1.8fr) 40px; gap: 6px; }
-    .pose-morph-row { grid-template-columns: minmax(0, 1.15fr) minmax(50px, 1.4fr) 38px; gap: 5px; }
+    .pose-range-row { grid-template-columns: 100px minmax(0, 1fr) 40px; gap: 6px; }
+    .pose-morph-row { grid-template-columns: 100px minmax(0, 1fr) 38px; gap: 5px; }
     .pose-morph-row .control-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .posing-empty-state { padding: 5px 2px; color: #a8b3c2; font-size: 12px; }
     .posing-expression-group .posing-expression-group { margin-left: 7px; }

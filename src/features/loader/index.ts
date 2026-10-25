@@ -5,6 +5,7 @@ import { buildSubjectModel } from './build';
 import { applyNormalsMode, type NormalsMode } from './normals';
 import { parsePmx } from './pmx';
 import { bindControls, readout, select } from '../../ui/controls';
+import { el } from '../../ui/dom';
 
 const NORMALS_KEY = 'umastudio.loader.normals';
 
@@ -28,7 +29,7 @@ export function install(ctx: AppContext): void {
   // localStorage rather than the document.
   let normalsMode: NormalsMode = readNormalsMode();
   const applyNormals = () => ctx.subject.model?.meshes.forEach((mesh) => applyNormalsMode(mesh.geometry, normalsMode));
-  const panel = ctx.ui.addPanel({ id: 'model', title: 'Model', order: 105 });
+  const panel = ctx.ui.addPanel({ id: 'model', title: 'Model', order: 95, collapsed: true });
   const modelName = readout('Model', () => ctx.store.doc.subject.modelName ?? 'Stand-in (load a model)');
   const normals = select<NormalsMode>({
     label: 'Normals',
@@ -47,18 +48,25 @@ export function install(ctx: AppContext): void {
   panel.append(modelName.element, normals.element);
   bindControls(ctx.store, [modelName, normals]);
 
-  ctx.ui.addToolbarButton({
-    id: 'load-model',
-    label: 'Load model',
-    title: 'Choose a model export folder',
-    onClick: () => folderInput.click(),
-  });
-  ctx.ui.addToolbarButton({
-    id: 'load-model-files',
-    label: 'Files…',
-    title: 'Choose a PMX file and any texture files',
-    onClick: () => filesInput.click(),
-  });
+  const loadModel = el('button', { type: 'button', class: 'tool-button', title: 'Choose a model export folder' }, ['Load model']);
+  loadModel.addEventListener('click', () => folderInput.click());
+  const fileMenu = el('details', { class: 'toolbar-dropdown' });
+  const menuContent = el('div', { class: 'toolbar-dropdown-menu' });
+  const choose = (label: string, input: HTMLInputElement) => {
+    const item = el('button', { type: 'button', class: 'toolbar-menu-item' }, [label]);
+    item.addEventListener('click', () => {
+      fileMenu.open = false;
+      input.click();
+    });
+    return item;
+  };
+  fileMenu.append(
+    el('summary', { class: 'tool-button', title: 'Choose a model folder or files', 'aria-label': 'Model file options' }, ['▾']),
+    menuContent,
+  );
+  menuContent.append(choose('Choose folder…', folderInput), choose('Choose files…', filesInput));
+  const modelToolbar = el('div', { class: 'toolbar-menu' }, [loadModel, fileMenu]);
+  ctx.ui.addToolbarItem(modelToolbar, 'left', 'model');
 
   const dropHighlight = document.createElement('div');
   dropHighlight.className = 'loader-drop-highlight';
@@ -151,7 +159,7 @@ export function install(ctx: AppContext): void {
       const missing = [...new Set(activeMaterials.missingTextures)];
       if (missing.length > 0) {
         const count = Math.min(missing.length, pmx.textures.length);
-        ctx.ui.toast(`${count} of ${pmx.textures.length} textures missing — showing flat colours`);
+        ctx.ui.toast(`${count} of ${pmx.textures.length} textures missing — showing flat colours`, 'info', 4000);
         console.warn(`[loader] Missing textures for ${selected.file.name}: ${missing.join(', ')}`);
       } else {
         ctx.ui.toast(`Loaded ${selected.file.name} (${pmx.faces.length.toLocaleString()} triangles)`);
