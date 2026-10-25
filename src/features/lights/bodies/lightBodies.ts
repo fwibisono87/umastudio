@@ -387,10 +387,14 @@ function addLightFace(root: Group, state: LightState, modifier: ModifierPreset):
     geometry = new PlaneGeometry(modifier.widthM, modifier.heightM);
   } else if (modifier.shape === 'octagon') {
     geometry = octagonFaceGeometry(modifier.widthM, modifier.heightM);
+  } else if (modifier.id.startsWith('umbrella-shoot')) {
+    // The translucent canopy is what glows. It bulges toward the subject with its rim
+    // behind the face plane, so a flat disc at z = 0 would float in front of it.
+    geometry = new LatheGeometry(umbrellaProfile(modifier.widthM / 2, modifier.depthM, true), 16).rotateX(Math.PI / 2);
   } else {
     geometry = new CircleGeometry(modifier.widthM / 2, 32);
   }
-  const seeThrough = modifier.category === 'reflector' || modifier.category === 'dish' || modifier.category === 'umbrella';
+  const seeThrough = modifier.category === 'reflector' || modifier.category === 'dish' || (modifier.category === 'umbrella' && !modifier.id.startsWith('umbrella-shoot'));
   const color = state.enabled ? kelvinToRgb(state.colorTempK) : [0.43, 0.45, 0.48] as const;
   const face = new Mesh(
     geometry,
@@ -482,13 +486,19 @@ function addBarnDoors(
   }
 }
 
-function addUmbrellaCanopy(root: Group, radius: number, depth: number, shootThrough: boolean, silver: boolean): void {
-  const profile = Array.from({ length: 9 }, (_, index) => {
+function umbrellaProfile(radius: number, depth: number, shootThrough: boolean): Vector2[] {
+  return Array.from({ length: 9 }, (_, index) => {
     const t = index / 8;
     const r = radius * t;
     const z = shootThrough ? -0.035 - (depth - 0.035) * t * t : -depth + (depth - 0.035) * t * t;
     return new Vector2(r, z);
   });
+}
+
+function addUmbrellaCanopy(root: Group, radius: number, depth: number, shootThrough: boolean, silver: boolean): void {
+  // A shoot-through canopy is the glowing face itself (see addLightFace).
+  if (shootThrough) return;
+  const profile = umbrellaProfile(radius, depth, false);
   const canopy = new Mesh(
     new LatheGeometry(profile, 16),
     new MeshStandardMaterial({
