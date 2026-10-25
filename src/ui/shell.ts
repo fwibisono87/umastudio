@@ -19,7 +19,9 @@ export interface ToolbarButtonOptions {
   label: string;
   title?: string;
   /** 'left' (default) next to the app name, 'right' at the far end. */
-  side?: 'left' | 'right';
+  side?: 'left' | 'center' | 'right';
+  /** Named visual group within a toolbar side. Existing buttons default to 'misc'. */
+  group?: string;
   onClick: () => void;
 }
 
@@ -28,13 +30,15 @@ export interface Ui {
   addPanel(options: PanelOptions): HTMLElement;
   addToolbarButton(options: ToolbarButtonOptions): HTMLButtonElement;
   /** Puts arbitrary content in the toolbar. */
-  addToolbarItem(element: HTMLElement, side?: 'left' | 'right'): void;
+  addToolbarItem(element: HTMLElement, side?: 'left' | 'center' | 'right', group?: string): void;
+  /** Expands a panel and scrolls it into view. */
+  revealPanel(id: string): void;
   /** Sets (or clears, with null) a named segment of the status bar. */
   setStatus(key: string, text: string | null): void;
   /** Shows a modal dialog; returns a function that closes it. */
   openDialog(title: string, content: HTMLElement, options?: { wide?: boolean; onClose?: () => void }): () => void;
   /** Brief non-blocking message, e.g. "Saved". */
-  toast(message: string, kind?: 'info' | 'error'): void;
+  toast(message: string, kind?: 'info' | 'error', durationMs?: number): void;
   /** Element stacked over the viewport canvas (pointer-events: none; children may opt in). */
   readonly viewportOverlay: HTMLElement;
   /** The element the renderer's canvas lives in. */
@@ -42,9 +46,10 @@ export interface Ui {
 }
 
 export function createShell(root: HTMLElement): Ui {
-  const toolbarLeft = el('div', { class: 'toolbar-group' }, [el('span', { class: 'app-name' }, ['umastudio'])]);
-  const toolbarRight = el('div', { class: 'toolbar-group' });
-  const toolbar = el('header', { class: 'toolbar' }, [toolbarLeft, el('div', { class: 'toolbar-spacer' }), toolbarRight]);
+  const toolbarLeft = el('div', { class: 'toolbar-cluster toolbar-left', 'aria-label': 'File, model, and history controls' });
+  const toolbarCenter = el('div', { class: 'toolbar-cluster toolbar-center', 'aria-label': 'View controls' });
+  const toolbarRight = el('div', { class: 'toolbar-cluster toolbar-right', 'aria-label': 'Display and output controls' });
+  const toolbar = el('header', { class: 'toolbar' }, [toolbarLeft, toolbarCenter, toolbarRight]);
 
   const viewportOverlay = el('div', { class: 'viewport-overlay' });
   const viewport = el('main', { class: 'viewport' }, [viewportOverlay]);
@@ -56,7 +61,10 @@ export function createShell(root: HTMLElement): Ui {
   root.append(toolbar, viewport, sidebar, status, toasts);
 
   const panels: { order: number; element: HTMLElement }[] = [];
+  const panelsById = new Map<string, HTMLElement>();
+  const toolbarParts = new Map<string, HTMLElement>();
   const statusSegments = new Map<string, HTMLElement>();
+  toolbarPart(toolbarLeft, 'brand').append(el('span', { class: 'app-name' }, ['umastudio']));
 
   return {
     viewport,
@@ -68,6 +76,7 @@ export function createShell(root: HTMLElement): Ui {
       const body = el('div', { class: 'panel-body' });
       const header = el('button', { class: 'panel-header', type: 'button' }, [title]);
       const panel = el('section', { class: 'panel', 'data-panel': id }, [header, body]);
+      panelsById.set(id, panel);
       if (stored === null ? collapsed : stored === '1') panel.classList.add('collapsed');
       header.addEventListener('click', () => {
         const isCollapsed = panel.classList.toggle('collapsed');
@@ -86,15 +95,23 @@ export function createShell(root: HTMLElement): Ui {
       return body;
     },
 
-    addToolbarButton({ id, label, title, side = 'left', onClick }) {
+    addToolbarButton({ id, label, title, side = 'left', group = 'misc', onClick }) {
       const button = el('button', { class: 'tool-button', type: 'button', 'data-tool': id, title: title ?? label }, [label]);
       button.addEventListener('click', onClick);
-      (side === 'left' ? toolbarLeft : toolbarRight).append(button);
+      toolbarPart(toolbarForSide(side), group).append(button);
       return button;
     },
 
-    addToolbarItem(element, side = 'left') {
-      (side === 'left' ? toolbarLeft : toolbarRight).append(element);
+    addToolbarItem(element, side = 'left', group = 'misc') {
+      toolbarPart(toolbarForSide(side), group).append(element);
+    },
+
+    revealPanel(id) {
+      const panel = panelsById.get(id);
+      if (!panel) return;
+      panel.classList.remove('collapsed');
+      writeStorage(`umastudio.panel.${id}.collapsed`, '0');
+      panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     },
 
     setStatus(key, text) {
@@ -136,12 +153,40 @@ export function createShell(root: HTMLElement): Ui {
       return close;
     },
 
-    toast(message, kind = 'info') {
+    toast(message, kind = 'info', durationMs) {
       const t = el('div', { class: `toast ${kind}` }, [message]);
       toasts.append(t);
-      setTimeout(() => t.remove(), kind === 'error' ? 6000 : 2500);
+      setTimeout(() => t.remove(), durationMs ?? (kind === 'error' ? 6000 : 2500));
     },
   };
+
+  function toolbarForSide(side: 'left' | 'center' | 'right'): HTMLElement {
+    return side === 'left' ? toolbarLeft : side === 'center' ? toolbarCenter : toolbarRight;
+  }
+
+  function toolbarPart(cluster: HTMLElement, group: string): HTMLElement {
+    const key = `${cluster.classList.contains('toolbar-left') ? 'left' : cluster.classList.contains('toolbar-center') ? 'center' : 'right'}:${group}`;
+    let part = toolbarParts.get(key);
+    if (!part) {
+      part = el('div', { class: 'toolbar-part', 'data-toolbar-group': group, role: 'group', 'aria-label': toolbarGroupLabel(group) });
+      toolbarParts.set(key, part);
+      cluster.append(part);
+    }
+    return part;
+  }
+}
+
+function toolbarGroupLabel(group: string): string {
+  const labels: Record<string, string> = {
+    brand: 'Application',
+    file: 'Scene file',
+    model: 'Model',
+    history: 'Undo and redo',
+    view: 'View',
+    display: 'Display',
+    help: 'Help',
+  };
+  return labels[group] ?? group;
 }
 
 // localStorage can throw (private mode, blocked storage); panel state is a convenience.

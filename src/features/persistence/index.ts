@@ -96,7 +96,7 @@ export function install(ctx: AppContext): void {
     set: (value) => updateDocument((draft) => { draft.environment.ambientLux = value; }, 'scene room ambient'),
   });
   const controls: Control[] = [name, notes, backdrop, floor, ambient];
-  const panel = ctx.ui.addPanel({ id: 'scene', title: 'Scene', order: 90 });
+  const panel = ctx.ui.addPanel({ id: 'scene', title: 'Scene', order: 90, collapsed: true });
   panel.append(
     group('Set', [name, notes]),
     group('Environment', [
@@ -110,9 +110,9 @@ export function install(ctx: AppContext): void {
   );
   bindControls(ctx.store, controls);
 
-  ctx.ui.addToolbarButton({ id: 'persistence-new', label: 'New', onClick: newScene });
-  ctx.ui.addToolbarButton({ id: 'persistence-open', label: 'Open…', onClick: () => { void openScene(); } });
-  ctx.ui.addToolbarButton({ id: 'persistence-save', label: 'Save', onClick: () => { void saveScene(false); } });
+  ctx.ui.addToolbarButton({ id: 'persistence-new', label: 'New', group: 'file', onClick: newScene });
+  ctx.ui.addToolbarButton({ id: 'persistence-open', label: 'Open…', title: 'Open a scene (Ctrl+O)', group: 'file', onClick: () => { void openScene(); } });
+  ctx.ui.addToolbarButton({ id: 'persistence-save', label: 'Save', title: 'Save the scene (Ctrl+S)', group: 'file', onClick: () => { void saveScene(false); } });
 
   const openInput = el('input', { id: 'persistence-open', type: 'file', accept: '.json,application/json' });
   openInput.hidden = true;

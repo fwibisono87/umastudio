@@ -2,6 +2,8 @@
 // picking and the shared gizmo. Features are installed on top of it (main.ts).
 
 import {
+  Box3,
+  HemisphereLight,
   NeutralToneMapping,
   Object3D,
   PCFShadowMap,
@@ -9,8 +11,10 @@ import {
   Raycaster,
   Scene,
   SRGBColorSpace,
+  Sphere,
   Timer,
   Vector2,
+  Vector3,
   WebGLRenderer,
 } from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
@@ -33,6 +37,7 @@ import {
 import type { SceneStore } from './store';
 import { createSubjectRuntime } from './studio';
 import type { Ui } from '../ui/shell';
+import { el } from '../ui/dom';
 
 export function createApp(store: SceneStore, ui: Ui): AppContext {
   const renderer = new WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
@@ -49,23 +54,33 @@ export function createApp(store: SceneStore, ui: Ui): AppContext {
   const scene = new Scene();
 
   const views = createViews(renderer);
+  const workLight = new HemisphereLight(0xf2f4f5, 0x747474, 0.7);
+  workLight.name = 'set-work-light';
+  workLight.layers.set(LAYER_HELPERS);
+  workLight.userData.editorOnly = true;
+  scene.add(workLight);
+
   const frame = createFrameLoop(renderer, scene, views, ui.viewport);
   const selection = createSelection();
   const gizmo = createGizmo(renderer, scene, views);
   const picking = createPicking(renderer, views, selection, gizmo);
   const subject = createSubjectRuntime(store, scene, picking);
 
+  const ctx: AppContext = { store, renderer, scene, views, frame, subject, selection, picking, gizmo, ui };
+
   installUndoKeys(store, ui);
   installViewToggle(views, ui);
+  installWorkLight(ctx, workLight);
+  installSelectionShortcuts(ctx, views);
 
-  return { store, renderer, scene, views, frame, subject, selection, picking, gizmo, ui };
+  return ctx;
 }
 
 // ---------------------------------------------------------------- views
 
 function createViews(renderer: WebGLRenderer): Views & { orbit: OrbitControls } {
   const setCamera = new PerspectiveCamera(45, 1, 0.05, 200);
-  setCamera.position.set(5, 3.2, 6);
+  setCamera.position.set(-5.5, 5.1, 6.5);
   setCamera.layers.enable(LAYER_SCENE);
   setCamera.layers.enable(LAYER_HELPERS);
 
@@ -108,12 +123,16 @@ function installViewToggle(views: Views, ui: Ui): void {
     id: 'view-set',
     label: 'Set view',
     title: 'Orbit around the studio (V)',
+    side: 'center',
+    group: 'view',
     onClick: () => views.setMode('set'),
   });
   const cameraButton = ui.addToolbarButton({
     id: 'view-camera',
     label: 'Camera view',
     title: 'Look through the camera (V)',
+    side: 'center',
+    group: 'view',
     onClick: () => views.setMode('camera'),
   });
   const sync = () => {
@@ -122,10 +141,191 @@ function installViewToggle(views: Views, ui: Ui): void {
   };
   views.onChange(sync);
   sync();
-  window.addEventListener('keydown', (e) => {
-    if (isTyping(e) || e.ctrlKey || e.metaKey || e.altKey) return;
-    if (e.key === 'v' || e.key === 'V') views.setMode(views.mode === 'set' ? 'camera' : 'set');
+}
+
+// Three r186 only gathers a light when its layers match the active camera:
+// WebGLRenderer.js:1408-1412 and 1426-1430. The set camera enables LAYER_HELPERS;
+// the shot camera is restricted to LAYER_SCENE in createViews(), so toggling this
+// light cannot change camera-view pixels. The meter reads the document, and HQ render
+// builds lights from document state while this object is marked editorOnly.
+function installWorkLight(ctx: AppContext, light: HemisphereLight): void {
+  const storageKey = 'umastudio.workLight.enabled';
+  let enabled = readWorkLightPreference(storageKey);
+  const button = ctx.ui.addToolbarButton({
+    id: 'work-light',
+    label: 'Work light',
+    title: 'Illuminate the set view only',
+    side: 'right',
+    group: 'display',
+    onClick: () => {
+      enabled = !enabled;
+      try { localStorage.setItem(storageKey, enabled ? '1' : '0'); } catch { /* preference only */ }
+      sync();
+    },
   });
+
+  const sync = () => {
+    // The layer mask is the render-path boundary; visibility also avoids doing any
+    // editor-light work while the photographer is looking through the shot camera.
+    light.visible = enabled && ctx.views.mode === 'set';
+    button.classList.toggle('active', enabled);
+    button.setAttribute('aria-pressed', String(enabled));
+  };
+  ctx.views.onChange(sync);
+  sync();
+}
+
+function readWorkLightPreference(key: string): boolean {
+  try {
+    return localStorage.getItem(key) !== '0';
+  } catch {
+    return true;
+  }
+}
+
+function installSelectionShortcuts(ctx: AppContext, views: Views & { orbit: OrbitControls }): void {
+  const openHelp = () => {
+    const shortcuts = [
+      ['V', 'Switch between set and camera view'],
+      ['F', 'Frame the selection, or the whole set'],
+      ['Esc', 'Clear the selection'],
+      ['Delete / Backspace', 'Delete the selected light or prop'],
+      ['Ctrl+Z', 'Undo'],
+      ['Ctrl+Shift+Z', 'Redo'],
+      ['Ctrl+S', 'Save the scene'],
+      ['Ctrl+O', 'Open a scene'],
+    ];
+    const list = el('div', { class: 'shortcut-list' }, shortcuts.flatMap(([key, description]) => [
+      el('kbd', {}, [key!]),
+      el('span', {}, [description!]),
+    ]));
+    ctx.ui.openDialog('Keyboard shortcuts', list);
+  };
+
+  ctx.ui.addToolbarButton({
+    id: 'shortcuts',
+    label: '?',
+    title: 'Keyboard shortcuts (?)',
+    side: 'right',
+    group: 'help',
+    onClick: openHelp,
+  });
+
+  ctx.selection.onChange((ref) => {
+    const panel = ref === null
+      ? null
+      : ref.kind === 'light' || ref.kind === 'prop'
+        ? 'lights'
+        : ref.kind === 'camera'
+          ? 'camera'
+          : 'pose';
+    if (panel) ctx.ui.revealPanel(panel);
+  });
+
+  window.addEventListener('keydown', (event) => {
+    const key = event.key.toLowerCase();
+    if (key === 'escape' && !isTyping(event)) {
+      ctx.selection.set(null);
+      return;
+    }
+    if (isTyping(event) || event.ctrlKey || event.metaKey || event.altKey) return;
+    if (document.querySelector('.dialog-backdrop')) return;
+
+    if (event.key === '?' || (event.key === '/' && event.shiftKey)) {
+      event.preventDefault();
+      openHelp();
+      return;
+    }
+    if (event.shiftKey) return;
+
+    if (key === 'v') {
+      ctx.views.setMode(ctx.views.mode === 'set' ? 'camera' : 'set');
+    } else if (key === 'f' && ctx.views.mode === 'set') {
+      event.preventDefault();
+      frameSelection(ctx, views);
+    } else if (key === 'delete' || key === 'backspace') {
+      if (deleteSelection(ctx)) event.preventDefault();
+    }
+  });
+}
+
+function deleteSelection(ctx: AppContext): boolean {
+  const selected = ctx.selection.current;
+  if (selected?.kind === 'light' && ctx.store.doc.lights.some((light) => light.id === selected.id)) {
+    ctx.store.update((doc) => { doc.lights = doc.lights.filter((light) => light.id !== selected.id); }, { label: `delete light ${selected.id}` });
+    ctx.selection.set(null);
+    return true;
+  } else if (selected?.kind === 'prop' && ctx.store.doc.props.some((prop) => prop.id === selected.id)) {
+    ctx.store.update((doc) => { doc.props = doc.props.filter((prop) => prop.id !== selected.id); }, { label: `delete prop ${selected.id}` });
+    ctx.selection.set(null);
+    return true;
+  }
+  return false;
+}
+
+function frameSelection(ctx: AppContext, views: Views & { orbit: OrbitControls }): void {
+  const box = new Box3().makeEmpty();
+  const addPoint = (point: readonly number[]) => box.expandByPoint(new Vector3(point[0], point[1], point[2]));
+  const addObject = (object: Object3D) => {
+    object.updateMatrixWorld(true);
+    box.expandByObject(object);
+  };
+  const document = ctx.store.doc;
+  const selected = ctx.selection.current;
+
+  if (selected === null) {
+    addObject(ctx.subject.anchor);
+    addPoint(document.camera.position);
+    addPoint(document.camera.target);
+    for (const light of document.lights) {
+      addPoint(light.position);
+      addPoint(light.target);
+    }
+    for (const prop of document.props) {
+      addPoint(prop.position);
+      addPoint(prop.target);
+    }
+  } else if (selected.kind === 'subject') {
+    addObject(ctx.subject.anchor);
+  } else if (selected.kind === 'camera') {
+    addPoint(document.camera.position);
+    addPoint(document.camera.target);
+  } else if (selected.kind === 'light') {
+    const light = document.lights.find((item) => item.id === selected.id);
+    if (light) {
+      addPoint(light.position);
+      addPoint(light.target);
+    }
+  } else if (selected.kind === 'prop') {
+    const prop = document.props.find((item) => item.id === selected.id);
+    if (prop) {
+      addPoint(prop.position);
+      addPoint(prop.target);
+      box.expandByPoint(new Vector3(prop.position[0] - prop.widthM / 2, prop.position[1] - prop.heightM / 2, prop.position[2]));
+      box.expandByPoint(new Vector3(prop.position[0] + prop.widthM / 2, prop.position[1] + prop.heightM / 2, prop.position[2]));
+    }
+  } else {
+    const name = selected.name.startsWith('IK:') ? selected.name.slice(3) : selected.name;
+    const bone = ctx.subject.model?.bones.get(name);
+    if (bone) {
+      const point = bone.getWorldPosition(new Vector3());
+      box.expandByPoint(point.clone().addScalar(-0.2));
+      box.expandByPoint(point.clone().addScalar(0.2));
+    }
+  }
+
+  if (box.isEmpty()) addPoint(document.subject.position);
+  const sphere = box.getBoundingSphere(new Sphere());
+  sphere.radius = Math.max(0.3, sphere.radius);
+
+  let direction = views.setCamera.position.clone().sub(views.orbit.target);
+  if (direction.lengthSq() < 1e-6) direction.set(-5, 4, 6);
+  direction.normalize();
+  const halfFov = (views.setCamera.fov * Math.PI) / 360;
+  const distance = Math.max(1.2, (sphere.radius / Math.sin(halfFov)) * 1.15);
+  views.orbit.target.copy(sphere.center);
+  views.setCamera.position.copy(sphere.center).addScaledVector(direction, distance);
+  views.orbit.update();
 }
 
 // ---------------------------------------------------------------- frame loop
@@ -302,8 +502,8 @@ function createGizmo(renderer: WebGLRenderer, scene: Scene, views: Views & { orb
 // ---------------------------------------------------------------- undo
 
 function installUndoKeys(store: SceneStore, ui: Ui): void {
-  const undo = ui.addToolbarButton({ id: 'undo', label: 'Undo', title: 'Undo (Ctrl+Z)', onClick: () => store.undo() });
-  const redo = ui.addToolbarButton({ id: 'redo', label: 'Redo', title: 'Redo (Ctrl+Shift+Z)', onClick: () => store.redo() });
+  const undo = ui.addToolbarButton({ id: 'undo', label: 'Undo', title: 'Undo (Ctrl+Z)', group: 'history', onClick: () => store.undo() });
+  const redo = ui.addToolbarButton({ id: 'redo', label: 'Redo', title: 'Redo (Ctrl+Shift+Z)', group: 'history', onClick: () => store.redo() });
   const sync = () => {
     undo.disabled = !store.canUndo;
     redo.disabled = !store.canRedo;
