@@ -2,7 +2,12 @@
 // light loss; adding one is a table edit, not code.
 //
 // lossStops and beamAngleDeg are calibrated together with STROBE_LM_S_PER_WS
-// (photometry.ts); change them as a set and re-run the calibration tests.
+// (photometry.ts); change them as a set and re-run the calibration tests. The standard
+// reflector's 80° half-power width is intentionally broader than some catalog beam
+// ratings: this cosine-integrated smoothstep profile is calibrated to the common
+// 500 Ws / f45-at-1m reference instead of treating the catalog angle as a hard cutoff.
+// The 90×120 softbox and 90 cm octabox losses are 1.0 stop (from 1.6): with the
+// revised strobe efficacy this places both within 1/3 stop of the 500 Ws / f11 test.
 
 export type EmitterShape = 'point' | 'rect' | 'disc' | 'octagon';
 
@@ -37,11 +42,11 @@ export interface ModifierPreset {
 
 export const MODIFIERS: readonly ModifierPreset[] = [
   { id: 'bare', name: 'Bare bulb', shortName: 'Bare', category: 'bare', shape: 'point', widthM: 0.05, heightM: 0.05, beamAngleDeg: 180, emission: 'directed', lossStops: 0, depthM: 0.05, acceptsGrid: false, acceptsBarnDoors: false },
-  { id: 'reflector-std', name: 'Standard reflector 18 cm', shortName: 'Refl 18', category: 'reflector', shape: 'disc', widthM: 0.18, heightM: 0.18, beamAngleDeg: 55, emission: 'directed', lossStops: 0.3, depthM: 0.12, acceptsGrid: true, acceptsBarnDoors: true },
+  { id: 'reflector-std', name: 'Standard reflector 18 cm', shortName: 'Refl 18', category: 'reflector', shape: 'disc', widthM: 0.18, heightM: 0.18, beamAngleDeg: 80, emission: 'directed', lossStops: 0.3, depthM: 0.12, acceptsGrid: true, acceptsBarnDoors: true },
   { id: 'reflector-wide', name: 'Wide-angle reflector', shortName: 'Refl wide', category: 'reflector', shape: 'disc', widthM: 0.26, heightM: 0.26, beamAngleDeg: 100, emission: 'directed', lossStops: 0.3, depthM: 0.1, acceptsGrid: true, acceptsBarnDoors: true },
   { id: 'softbox-60x90', name: 'Softbox 60×90', shortName: 'SB 60×90', category: 'softbox', shape: 'rect', widthM: 0.6, heightM: 0.9, beamAngleDeg: 110, emission: 'diffuse', lossStops: 1.5, depthM: 0.45, acceptsGrid: true, acceptsBarnDoors: false },
-  { id: 'softbox-90x120', name: 'Softbox 90×120', shortName: 'SB 90×120', category: 'softbox', shape: 'rect', widthM: 0.9, heightM: 1.2, beamAngleDeg: 110, emission: 'diffuse', lossStops: 1.6, depthM: 0.55, acceptsGrid: true, acceptsBarnDoors: false },
-  { id: 'octabox-90', name: 'Octabox 90', shortName: 'Octa 90', category: 'octabox', shape: 'octagon', widthM: 0.9, heightM: 0.9, beamAngleDeg: 110, emission: 'diffuse', lossStops: 1.6, depthM: 0.5, acceptsGrid: true, acceptsBarnDoors: false },
+  { id: 'softbox-90x120', name: 'Softbox 90×120', shortName: 'SB 90×120', category: 'softbox', shape: 'rect', widthM: 0.9, heightM: 1.2, beamAngleDeg: 110, emission: 'diffuse', lossStops: 1, depthM: 0.55, acceptsGrid: true, acceptsBarnDoors: false },
+  { id: 'octabox-90', name: 'Octabox 90', shortName: 'Octa 90', category: 'octabox', shape: 'octagon', widthM: 0.9, heightM: 0.9, beamAngleDeg: 110, emission: 'diffuse', lossStops: 1, depthM: 0.5, acceptsGrid: true, acceptsBarnDoors: false },
   { id: 'octabox-150', name: 'Octabox 150', shortName: 'Octa 150', category: 'octabox', shape: 'octagon', widthM: 1.5, heightM: 1.5, beamAngleDeg: 115, emission: 'diffuse', lossStops: 1.8, depthM: 0.7, acceptsGrid: true, acceptsBarnDoors: false },
   { id: 'stripbox-30x120', name: 'Stripbox 30×120', shortName: 'Strip 30×120', category: 'stripbox', shape: 'rect', widthM: 0.3, heightM: 1.2, beamAngleDeg: 105, emission: 'diffuse', lossStops: 1.7, depthM: 0.35, acceptsGrid: true, acceptsBarnDoors: false },
   { id: 'stripbox-30x180', name: 'Stripbox 30×180', shortName: 'Strip 30×180', category: 'stripbox', shape: 'rect', widthM: 0.3, heightM: 1.8, beamAngleDeg: 105, emission: 'diffuse', lossStops: 1.8, depthM: 0.35, acceptsGrid: true, acceptsBarnDoors: false },
