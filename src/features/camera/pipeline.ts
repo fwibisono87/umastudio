@@ -45,8 +45,7 @@ const fragmentShader = /* glsl */ `
   uniform float uDofEnabled;
   varying vec2 vUv;
 
-  #include <tonemapping_pars_fragment>
-  #include <colorspace_pars_fragment>
+  // three.js prepends the tone-mapping and colour-space functions to ShaderMaterials.
 
   float linearDepthM(float rawDepth) {
     return (uNear * uFar) / max(uFar - rawDepth * (uFar - uNear), 0.000001);
