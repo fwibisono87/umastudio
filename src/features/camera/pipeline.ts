@@ -148,6 +148,8 @@ export function createCameraViewPass(ctx: AppContext, dofEnabled: () => boolean)
         magFilter: LinearFilter,
         depthBuffer: true,
         stencilBuffer: false,
+        // MSAA, so the camera view is as smooth as the set view.
+        samples: 4,
       });
       target.texture.colorSpace = NoColorSpace;
       target.depthTexture = new DepthTexture(width, height, UnsignedIntType);
@@ -194,6 +196,8 @@ export function createCameraViewPass(ctx: AppContext, dofEnabled: () => boolean)
       material.uniforms.uSensorWidthMm!.value = doc.camera.body.sensorWidthMm;
       material.uniforms.uDofEnabled!.value = dofEnabled() ? 1 : 0;
 
+      // The output pass applies the renderer's normal tone mapping, so camera view matches set view.
+      renderer.toneMapping = previousToneMapping;
       renderer.setRenderTarget(null);
       renderer.setScissorTest(false);
       renderer.setViewport(0, 0, ctx.frame.size.width, ctx.frame.size.height);

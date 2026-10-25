@@ -20,7 +20,7 @@ export interface CameraPlacement {
   distanceM: number;
   /** Camera height above the floor, in metres. */
   heightM: number;
-  /** 0 is +Z; positive angles move camera-left (+X when facing the subject). */
+  /** 0 is +Z; positive angles move toward +X, the photographer's right when looking down -Z. */
   angleDeg: number;
 }
 
@@ -35,7 +35,7 @@ export function placementFromPosition(position: Vec3, subjectPosition: Vec3): Ca
   };
 }
 
-/** Converts orbit controls back to world XYZ. Positive angle is camera-left (+X). */
+/** Converts orbit controls back to world XYZ. Positive angle is toward +X. */
 export function positionFromPlacement(placement: CameraPlacement, subjectPosition: Vec3): Vec3 {
   const angle = (placement.angleDeg * Math.PI) / 180;
   return [

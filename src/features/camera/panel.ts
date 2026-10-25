@@ -134,7 +134,7 @@ export function installCameraPanel(ctx: AppContext, onDisplayOptionsChange: () =
   });
   const angle = numberField({
     label: 'Orbit angle', unit: '°', min: -180, max: 180, step: 1, precision: 1,
-    title: '0° is in front (+Z); positive angles move to camera-left (+X).',
+    title: '0° is in front (+Z); positive angles move toward +X (to the right, seen from the default camera).',
     get: () => placement(ctx.store.doc).angleDeg,
     set: (value) => setPlacement(ctx, update, { angleDeg: value }),
   });
