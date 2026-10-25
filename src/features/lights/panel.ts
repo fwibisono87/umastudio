@@ -59,6 +59,10 @@ export function installLightsPanel(ctx: AppContext): void {
     const selection = ctx.selection.current;
     return selection?.kind === 'light' ? ctx.store.doc.lights.find((light) => light.id === selection.id) : undefined;
   };
+  const selectedOwner = () => {
+    const selection = ctx.selection.current;
+    return selection?.kind === 'aim' ? selection.owner : selection;
+  };
   const mutateLight = (id: string, label: string, recipe: (light: LightState) => void) => {
     ctx.store.update((doc) => {
       const light = doc.lights.find((item) => item.id === id);
@@ -241,7 +245,13 @@ export function installLightsPanel(ctx: AppContext): void {
       get: () => lightPolar(findLight(id), (ctx.store.doc as SceneDocument).subject.position).angleDeg,
       set: (value) => update('placement', (state) => setPolarPosition(state, (ctx.store.doc as SceneDocument).subject.position, undefined, value)),
     });
-    controls.push(distance, height, azimuth);
+    const roll = numberField({
+      label: 'Roll', unit: '°', min: -180, max: 180, step: 1, precision: 1,
+      title: '90° lays a stripbox horizontal.',
+      get: () => findLight(id)?.rollDeg ?? 0,
+      set: (value) => update('roll', (state) => { state.rollDeg = value; }),
+    });
+    controls.push(distance, height, azimuth, roll);
 
     const positionFields = vec3Fields('Position', () => findLight(id), (state) => state.position, (state, axis, value) => { state.position[axis] = value; }, update);
     const targetFields = vec3Fields('Target', () => findLight(id), (state) => state.target, (state, axis, value) => { state.target[axis] = value; }, update);
@@ -251,7 +261,7 @@ export function installLightsPanel(ctx: AppContext): void {
     const advanced = el('details', {}, [el('summary', {}, ['Advanced XYZ']), ...positionFields.map((control) => control.element), ...targetFields.map((control) => control.element)]);
     const modifierFields = group('Output and modifier', controls.slice(0, controls.indexOf(grid)));
     const accessoryFields = group('Accessories', [grid, ...barnFields]);
-    const placementFields = group('Placement', [distance, height, azimuth, aim, advanced]);
+    const placementFields = group('Placement', [distance, height, azimuth, roll, aim, advanced]);
     lightDetails.replaceChildren(modifierFields, accessoryFields, placementFields);
 
     const refresh = () => {
@@ -276,7 +286,13 @@ export function installLightsPanel(ctx: AppContext): void {
     );
     const positionFields = vec3Fields('Position', () => findProp(id), (state) => state.position, (state, axis, value) => { state.position[axis] = value; }, update);
     const targetFields = vec3Fields('Target', () => findProp(id), (state) => state.target, (state, axis, value) => { state.target[axis] = value; }, update);
-    controls.push(...positionFields, ...targetFields);
+    const roll = numberField({
+      label: 'Roll', unit: '°', min: -180, max: 180, step: 1, precision: 1,
+      title: '90° lays a stripbox horizontal.',
+      get: () => findProp(id)?.rollDeg ?? 0,
+      set: (value) => update('roll', (state) => { state.rollDeg = value; }),
+    });
+    controls.push(...positionFields, ...targetFields, roll);
     let colorControl: Control | null = null;
     if (prop.kind === 'bounce') {
       colorControl = select({
@@ -294,12 +310,13 @@ export function installLightsPanel(ctx: AppContext): void {
     }
     const aim = button('Aim at subject', () => update('aim', (state) => { state.target = facePoint(ctx.store.doc as SceneDocument); }));
     const deleteButton = button('Delete prop', () => {
+      if (ctx.selection.current?.kind === 'aim') return;
       ctx.store.update((draft) => { draft.props = draft.props.filter((item) => item.id !== id); }, { label: `delete prop ${id}` });
       ctx.selection.set(null);
     });
     propDetails.replaceChildren(
       group('Size and material', [controls[0]!, controls[1]!, controls[2]!, ...(colorControl ? [colorControl] : []), ...(transmission ? [transmission] : [])]),
-      group('Placement', [...positionFields, ...targetFields, aim, deleteButton]),
+      group('Placement', [...positionFields, ...targetFields, roll, aim, deleteButton]),
     );
     detailControls = controls;
     controls.forEach((control) => control.refresh());
@@ -338,6 +355,7 @@ export function installLightsPanel(ctx: AppContext): void {
 
   function renderLists(doc: SceneDocument): void {
     const selected = ctx.selection.current;
+    const owner = selectedOwner();
     const lightRows = doc.lights.map((light) => {
       const modifier = getModifier(light.modifierId);
       const power = light.output.kind === 'strobe'
@@ -346,7 +364,7 @@ export function installLightsPanel(ctx: AppContext): void {
       const item = button(`${light.name} · ${modifier.shortName} · ${power}`, () => ctx.selection.set({ kind: 'light', id: light.id }));
       item.style.gridColumn = '1 / 3';
       item.style.textAlign = 'left';
-      item.classList.toggle('active', selected?.kind === 'light' && selected.id === light.id);
+      item.classList.toggle('active', owner?.kind === 'light' && owner.id === light.id);
       const enabled = el('input', { type: 'checkbox', class: 'control-check', title: 'Enable light' });
       enabled.checked = light.enabled;
       enabled.addEventListener('change', () => mutateLight(light.id, 'enabled', (state) => { state.enabled = enabled.checked; }));
@@ -359,28 +377,28 @@ export function installLightsPanel(ctx: AppContext): void {
       const item = button(`${prop.name} · ${prop.kind} · ${prop.widthM.toFixed(1)} × ${prop.heightM.toFixed(1)} m`, () => ctx.selection.set({ kind: 'prop', id: prop.id }));
       item.style.gridColumn = '1 / 4';
       item.style.textAlign = 'left';
-      item.classList.toggle('active', selected?.kind === 'prop' && selected.id === prop.id);
+      item.classList.toggle('active', owner?.kind === 'prop' && owner.id === prop.id);
       return el('div', { class: 'control-row' }, [item]);
     });
     propList.replaceChildren(...propRows);
 
     duplicate.disabled = selected?.kind !== 'light';
     deleteLight.disabled = selected?.kind !== 'light';
-    const key = selected?.kind === 'light'
-      ? `light:${selected.id}:${doc.lights.find((item) => item.id === selected.id)?.output.kind ?? ''}`
-      : selected?.kind === 'prop'
-        ? `prop:${selected.id}:${doc.props.find((item) => item.id === selected.id)?.kind ?? ''}`
+    const key = owner?.kind === 'light'
+      ? `light:${owner.id}:${doc.lights.find((item) => item.id === owner.id)?.output.kind ?? ''}`
+      : owner?.kind === 'prop'
+        ? `prop:${owner.id}:${doc.props.find((item) => item.id === owner.id)?.kind ?? ''}`
         : '';
     if (key !== renderedSelection) {
       renderedSelection = key;
       detailControls = [];
-      if (selected?.kind === 'light') {
-        const light = doc.lights.find((item) => item.id === selected.id);
+      if (owner?.kind === 'light') {
+        const light = doc.lights.find((item) => item.id === owner.id);
         propDetails.replaceChildren(el('div', { class: 'control-label' }, ['Select a prop to edit it.']));
         lightDetails.replaceChildren();
         if (light) buildLightDetails(light);
-      } else if (selected?.kind === 'prop') {
-        const prop = doc.props.find((item) => item.id === selected.id);
+      } else if (owner?.kind === 'prop') {
+        const prop = doc.props.find((item) => item.id === owner.id);
         lightDetails.replaceChildren(el('div', { class: 'control-label' }, ['Select a light to edit it.']));
         propDetails.replaceChildren();
         if (prop) buildPropDetails(prop);
@@ -390,7 +408,7 @@ export function installLightsPanel(ctx: AppContext): void {
       }
     } else {
       detailControls.forEach((control) => control.refresh());
-      const light = selected?.kind === 'light' ? doc.lights.find((item) => item.id === selected.id) : undefined;
+      const light = owner?.kind === 'light' ? doc.lights.find((item) => item.id === owner.id) : undefined;
       if (light) {
         const modifier = getModifier(light.modifierId);
         const accessoryRows = lightDetails.querySelectorAll('.control-group:nth-child(2) .control-row');

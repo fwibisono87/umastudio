@@ -71,6 +71,7 @@ export function createApp(store: SceneStore, ui: Ui): AppContext {
   installUndoKeys(store, ui);
   installViewToggle(views, ui);
   installWorkLight(ctx, workLight);
+  installToolMode(ctx);
   installSelectionShortcuts(ctx, views);
 
   return ctx;
@@ -175,6 +176,50 @@ function installWorkLight(ctx: AppContext, light: HemisphereLight): void {
   sync();
 }
 
+function installToolMode(ctx: AppContext): void {
+  const moveButton = ctx.ui.addToolbarButton({
+    id: 'tool-move',
+    label: 'Move',
+    title: 'Move tool (W)',
+    side: 'center',
+    group: 'tool',
+    onClick: () => ctx.gizmo.setToolMode('translate'),
+  });
+  const rotateButton = ctx.ui.addToolbarButton({
+    id: 'tool-rotate',
+    label: 'Rotate',
+    title: 'Rotate tool (E)',
+    side: 'center',
+    group: 'tool',
+    onClick: () => ctx.gizmo.setToolMode('rotate'),
+  });
+  const segment = moveButton.parentElement;
+  if (segment) {
+    segment.setAttribute('aria-label', 'Transform tools');
+    Object.assign(segment.style, {
+      gap: '0',
+      padding: '0',
+      border: '1px solid var(--border)',
+      borderRadius: 'var(--radius)',
+      overflow: 'hidden',
+    });
+  }
+  moveButton.style.border = '0';
+  moveButton.style.borderRadius = '0';
+  rotateButton.style.border = '0';
+  rotateButton.style.borderRadius = '0';
+  rotateButton.style.borderLeft = '1px solid var(--border)';
+
+  const sync = (mode: 'translate' | 'rotate' = ctx.gizmo.toolMode) => {
+    moveButton.classList.toggle('active', mode === 'translate');
+    rotateButton.classList.toggle('active', mode === 'rotate');
+    moveButton.setAttribute('aria-pressed', String(mode === 'translate'));
+    rotateButton.setAttribute('aria-pressed', String(mode === 'rotate'));
+  };
+  ctx.gizmo.onToolModeChange(sync);
+  sync();
+}
+
 function readWorkLightPreference(key: string): boolean {
   try {
     return localStorage.getItem(key) !== '0';
@@ -187,6 +232,8 @@ function installSelectionShortcuts(ctx: AppContext, views: Views & { orbit: Orbi
   const openHelp = () => {
     const shortcuts = [
       ['V', 'Switch between set and camera view'],
+      ['W', 'Use the move tool'],
+      ['E', 'Use the rotate tool'],
       ['F', 'Frame the selection, or the whole set'],
       ['Esc', 'Clear the selection'],
       ['Delete / Backspace', 'Delete the selected light or prop'],
@@ -212,11 +259,12 @@ function installSelectionShortcuts(ctx: AppContext, views: Views & { orbit: Orbi
   });
 
   ctx.selection.onChange((ref) => {
-    const panel = ref === null
+    const owner = ref?.kind === 'aim' ? ref.owner : ref;
+    const panel = owner === null || owner === undefined
       ? null
-      : ref.kind === 'light' || ref.kind === 'prop'
+      : owner.kind === 'light' || owner.kind === 'prop'
         ? 'lights'
-        : ref.kind === 'camera'
+        : owner.kind === 'camera'
           ? 'camera'
           : 'pose';
     if (panel) ctx.ui.revealPanel(panel);
@@ -243,8 +291,12 @@ function installSelectionShortcuts(ctx: AppContext, views: Views & { orbit: Orbi
     } else if (key === 'f' && ctx.views.mode === 'set') {
       event.preventDefault();
       frameSelection(ctx, views);
+    } else if (key === 'w') {
+      ctx.gizmo.setToolMode('translate');
+    } else if (key === 'e') {
+      ctx.gizmo.setToolMode('rotate');
     } else if (key === 'delete' || key === 'backspace') {
-      if (deleteSelection(ctx)) event.preventDefault();
+      if (ctx.selection.current?.kind === 'aim' || deleteSelection(ctx)) event.preventDefault();
     }
   });
 }
@@ -271,7 +323,8 @@ function frameSelection(ctx: AppContext, views: Views & { orbit: OrbitControls }
     box.expandByObject(object);
   };
   const document = ctx.store.doc;
-  const selected = ctx.selection.current;
+  const selection = ctx.selection.current;
+  const selected = selection?.kind === 'aim' ? selection.owner : selection;
 
   if (selected === null) {
     addObject(ctx.subject.anchor);
@@ -427,6 +480,17 @@ function createPicking(renderer: WebGLRenderer, views: Views, selection: Selecti
     );
     raycaster.setFromCamera(ndc, views.active);
     const hits = raycaster.intersectObjects([...targets.keys()], true);
+    // Aim spheres render above the scene so their small target remains a usable
+    // affordance even when it sits on the subject surface.
+    for (const hit of hits) {
+      for (let object: Object3D | null = hit.object; object; object = object.parent) {
+        const ref = targets.get(object);
+        if (ref?.kind === 'aim' && object.visible) {
+          selection.set(ref);
+          return;
+        }
+      }
+    }
     for (const hit of hits) {
       // Walk up to the registered ancestor; the nearest registered one wins, so a bone
       // handle registered inside the subject selects the bone, not the subject.
@@ -462,6 +526,8 @@ function createGizmo(renderer: WebGLRenderer, scene: Scene, views: Views & { orb
 
   let options: GizmoOptions | null = null;
   let dragging = false;
+  let toolMode: 'translate' | 'rotate' = 'translate';
+  const toolModeListeners = new Set<(mode: 'translate' | 'rotate') => void>();
 
   controls.addEventListener('dragging-changed', (e) => {
     dragging = Boolean(e.value);
@@ -479,6 +545,18 @@ function createGizmo(renderer: WebGLRenderer, scene: Scene, views: Views & { orb
   });
 
   return {
+    get toolMode() {
+      return toolMode;
+    },
+    setToolMode(mode) {
+      if (mode === toolMode) return;
+      toolMode = mode;
+      toolModeListeners.forEach((listener) => listener(mode));
+    },
+    onToolModeChange(listener) {
+      toolModeListeners.add(listener);
+      return () => toolModeListeners.delete(listener);
+    },
     get attached() {
       return controls.object ?? null;
     },

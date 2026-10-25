@@ -5,6 +5,7 @@ import {
   DoubleSide,
   Float32BufferAttribute,
   Group,
+  Line,
   LineBasicMaterial,
   LineSegments,
   Mesh,
@@ -12,11 +13,12 @@ import {
   MeshStandardMaterial,
   Object3D,
   PlaneGeometry,
+  SphereGeometry,
   Vector3,
 } from 'three';
-import { LAYER_HELPERS, type AppContext } from '../../core/context';
+import { LAYER_HELPERS, type AppContext, type EntityRef } from '../../core/context';
+import { aimFromQuaternion, aimQuaternion, aimQuaternionForNegativeZ } from '../../scene/aim';
 import type { SceneDocument, Vec3 } from '../../scene/types';
-import { DEG2RAD } from '../../scene/units';
 
 export interface CameraHelpers {
   readonly proxy: Object3D;
@@ -71,32 +73,84 @@ export function createCameraHelpers(ctx: AppContext): CameraHelpers {
   markEditorOnly(proxy);
   ctx.scene.add(proxy);
 
+  const aimProxy = new Object3D();
+  aimProxy.name = 'Camera aim proxy';
+  aimProxy.visible = false;
+  markEditorOnly(aimProxy);
+  ctx.scene.add(aimProxy);
+  const aimHandle = new Mesh(new SphereGeometry(0.05, 16, 12), new MeshBasicMaterial({ color: 0xe8a33d, depthTest: false, depthWrite: false }));
+  aimHandle.name = 'Camera aim target handle';
+  aimHandle.renderOrder = 1000;
+  markEditorOnly(aimHandle);
+  ctx.scene.add(aimHandle);
+  const aimLine = new Line(
+    new BufferGeometry().setFromPoints([new Vector3(), new Vector3()]),
+    new LineBasicMaterial({ color: 0xe8a33d, transparent: true, opacity: 0.72, depthTest: false, depthWrite: false }),
+  );
+  aimLine.name = 'Camera aim guide';
+  aimLine.renderOrder = 999;
+  aimLine.frustumCulled = false;
+  markEditorOnly(aimLine);
+  ctx.scene.add(aimLine);
+  ctx.picking.register(aimHandle, { kind: 'aim', owner: { kind: 'camera' } });
+
   const shotCamera = ctx.views.shotCamera;
   let frustumSignature = '';
 
+  const syncAim = (position: Vec3, target: Vec3) => {
+    aimProxy.position.fromArray(target);
+    aimHandle.position.fromArray(target);
+    const positions = aimLine.geometry.getAttribute('position');
+    positions.setXYZ(0, position[0], position[1], position[2]);
+    positions.setXYZ(1, target[0], target[1], target[2]);
+    positions.needsUpdate = true;
+    aimLine.geometry.computeBoundingSphere();
+    const selected = ctx.selection.current;
+    const shown = ctx.views.mode === 'set'
+      && (selected?.kind === 'camera' || (selected?.kind === 'aim' && selected.owner.kind === 'camera'));
+    aimHandle.visible = shown;
+    aimLine.visible = shown;
+  };
+
+  const applyPose = (position: Vec3, target: Vec3, rollDeg: number) => {
+    const bodyOrientation = aimQuaternion(position, target, rollDeg);
+    shotCamera.position.fromArray(position);
+    shotCamera.quaternion.copy(aimQuaternionForNegativeZ(position, target, rollDeg));
+    shotCamera.updateProjectionMatrix();
+    shotCamera.updateMatrixWorld();
+
+    bodyGroup.position.fromArray(position);
+    bodyGroup.quaternion.copy(bodyOrientation);
+    bodyGroup.visible = ctx.views.mode === 'set';
+    if (!(ctx.gizmo.attached === proxy && ctx.gizmo.dragging && ctx.gizmo.toolMode === 'rotate')) {
+      proxy.position.fromArray(position);
+      proxy.quaternion.copy(bodyOrientation);
+    }
+    syncAim(position, target);
+  };
+
   const sync = (doc: SceneDocument) => {
     const camera = doc.camera;
-    const target = new Vector3().fromArray(camera.target);
-    const position = new Vector3().fromArray(camera.position);
-
     shotCamera.filmGauge = camera.body.sensorWidthMm;
     shotCamera.aspect = camera.body.sensorWidthMm / camera.body.sensorHeightMm;
     shotCamera.setFocalLength(camera.lens.focalLengthMm);
     shotCamera.near = 0.05;
     shotCamera.far = 200;
-    shotCamera.position.copy(position);
     shotCamera.up.set(0, 1, 0);
-    shotCamera.lookAt(target);
-    shotCamera.rotateZ(-camera.rollDeg * DEG2RAD);
-    shotCamera.updateProjectionMatrix();
-    shotCamera.updateMatrixWorld();
-
-    bodyGroup.position.copy(position);
-    bodyGroup.quaternion.identity();
-    bodyGroup.lookAt(target);
-    bodyGroup.rotateZ(-camera.rollDeg * DEG2RAD);
-    bodyGroup.visible = ctx.views.mode === 'set';
-    proxy.position.copy(position);
+    let position = camera.position;
+    let target = camera.target;
+    let rollDeg = camera.rollDeg;
+    if (ctx.gizmo.dragging && ctx.gizmo.attached === proxy) {
+      position = proxy.position.toArray() as Vec3;
+      if (ctx.gizmo.toolMode === 'rotate') {
+        const aimed = aimFromQuaternion(position, proxy.quaternion, distanceM(camera.position, camera.target));
+        target = aimed.target;
+        rollDeg = aimed.rollDeg;
+      }
+    } else if (ctx.gizmo.dragging && ctx.gizmo.attached === aimProxy) {
+      target = aimProxy.position.toArray() as Vec3;
+    }
+    applyPose(position, target, rollDeg);
 
     const signature = [camera.body.sensorWidthMm, camera.body.sensorHeightMm, camera.lens.focalLengthMm, camera.lens.focusDistanceM].join(':');
     if (signature !== frustumSignature) {
@@ -111,28 +165,78 @@ export function createCameraHelpers(ctx: AppContext): CameraHelpers {
     }
   };
 
-  ctx.views.onChange((mode) => {
-    bodyGroup.visible = mode === 'set';
+  ctx.views.onChange(() => {
+    bodyGroup.visible = ctx.views.mode === 'set';
+    const camera = ctx.store.doc.camera;
+    syncAim(camera.position, camera.target);
   });
 
-  ctx.selection.onChange((ref) => {
-    if (ref?.kind === 'camera') {
-      proxy.position.fromArray(ctx.store.doc.camera.position);
-      ctx.gizmo.attach(proxy, {
+  const attachSelection = (ref: EntityRef | null) => {
+    const cameraAimSelected = ref?.kind === 'aim' && ref.owner.kind === 'camera';
+    if (cameraAimSelected) {
+      aimProxy.position.fromArray(ctx.store.doc.camera.target);
+      ctx.gizmo.attach(aimProxy, {
         mode: 'translate',
         onChange: (object) => {
-          const position: Vec3 = [object.position.x, object.position.y, object.position.z];
-          ctx.store.update((draft) => {
-            draft.camera.position = position;
-          }, { label: 'camera position' });
+          const camera = ctx.store.doc.camera;
+          const target = object.position.toArray() as Vec3;
+          applyPose(camera.position, target, camera.rollDeg);
+        },
+        onCommit: (object) => {
+          const target = object.position.toArray() as Vec3;
+          ctx.store.update((draft) => { draft.camera.target = target; }, { label: `aim camera drag ${cameraCommitSerial++}` });
         },
       });
-    } else if (ctx.gizmo.attached === proxy) {
-      ctx.gizmo.detach();
+      return;
     }
+    if (ref?.kind === 'camera') {
+      const mode = ctx.gizmo.toolMode;
+      const camera = ctx.store.doc.camera;
+      proxy.position.fromArray(camera.position);
+      proxy.quaternion.copy(aimQuaternion(camera.position, camera.target, camera.rollDeg));
+      ctx.gizmo.attach(proxy, {
+        mode,
+        space: mode === 'rotate' ? 'local' : 'world',
+        onChange: (object) => {
+          const current = ctx.store.doc.camera;
+          const position = object.position.toArray() as Vec3;
+          if (mode === 'rotate') {
+            const aimed = aimFromQuaternion(position, object.quaternion, distanceM(current.position, current.target));
+            applyPose(position, aimed.target, aimed.rollDeg);
+          } else {
+            applyPose(position, current.target, current.rollDeg);
+          }
+        },
+        onCommit: (object) => {
+          const position = object.position.toArray() as Vec3;
+          ctx.store.update((draft) => {
+            if (mode === 'rotate') {
+              const aimed = aimFromQuaternion(position, object.quaternion, distanceM(draft.camera.position, draft.camera.target));
+              draft.camera.target = aimed.target;
+              draft.camera.rollDeg = aimed.rollDeg;
+            } else {
+              draft.camera.position = position;
+            }
+          }, { label: `${mode === 'rotate' ? 'rotate' : 'move'} camera drag ${cameraCommitSerial++}` });
+        },
+      });
+      return;
+    }
+    if (ctx.gizmo.attached === proxy || ctx.gizmo.attached === aimProxy) ctx.gizmo.detach();
+  };
+  let cameraCommitSerial = 0;
+  ctx.selection.onChange((ref) => {
+    const camera = ctx.store.doc.camera;
+    syncAim(camera.position, camera.target);
+    attachSelection(ref);
   });
+  ctx.gizmo.onToolModeChange(() => attachSelection(ctx.selection.current));
 
   return { proxy, sync };
+}
+
+function distanceM(position: Vec3, target: Vec3): number {
+  return Math.hypot(target[0] - position[0], target[1] - position[1], target[2] - position[2]);
 }
 
 function createFrustumGeometry(sensorWidthMm: number, sensorHeightMm: number, focalMm: number, depthM: number): BufferGeometry {

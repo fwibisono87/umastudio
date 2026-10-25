@@ -1,10 +1,13 @@
 import {
+  BufferGeometry,
   BoxGeometry,
   CircleGeometry,
   CylinderGeometry,
   DoubleSide,
   Group,
   LinearSRGBColorSpace,
+  Line,
+  LineBasicMaterial,
   Mesh,
   MeshBasicMaterial,
   MeshPhysicalMaterial,
@@ -21,16 +24,13 @@ import {
 import { RectAreaLightUniformsLib } from 'three/addons/lights/RectAreaLightUniformsLib.js';
 import type { AppContext, EntityRef } from '../../core/context';
 import { LAYER_HELPERS, LAYER_SCENE } from '../../core/context';
+import { aimFromQuaternion, aimQuaternion, aimQuaternionForNegativeZ } from '../../scene/aim';
 import { getModifier } from '../../scene/modifiers';
 import { illuminanceAt, kelvinToRgb, lightColor, onAxisIntensity, outerAngleForHalfPower } from '../../scene/lightModel';
 import { renderIntensityContinuous, renderIntensityStrobe } from '../../scene/photometry';
 import type { LightState, PropState, SceneDocument, Vec3 } from '../../scene/types';
 import { isLargeDiffuseSource, rectEffectiveArea, sourceDistance, splitSoftSource } from './renderMath';
 
-const FORWARD = new Vector3(0, 0, 1);
-// Bodies point +Z at their target, but three.js lights emit along their local -Z, so an
-// area light copying a body's orientation needs a half turn to face the same way.
-const FLIP_TO_LIGHT_AXIS = new Quaternion().setFromAxisAngle(new Vector3(0, 1, 0), Math.PI);
 const AREA_SHARE = 0.58;
 let areaUniformsReady = false;
 let gizmoCommitSerial = 0;
@@ -39,6 +39,10 @@ interface LightRuntime {
   body: Group;
   stand: Mesh;
   proxy: Object3D;
+  aimProxy: Object3D;
+  aimHandle: Mesh;
+  aimLine: Line;
+  unregisterAim: () => void;
   spot: SpotLight | null;
   point: PointLight | null;
   target: Object3D | null;
@@ -52,6 +56,10 @@ interface LightRuntime {
 interface PropRuntime {
   body: Group;
   proxy: Object3D;
+  aimProxy: Object3D;
+  aimHandle: Mesh;
+  aimLine: Line;
+  unregisterAim: () => void;
   surface: Mesh;
   bounce: RectAreaLight | null;
   unregister: () => void;
@@ -73,6 +81,51 @@ export function createLightRuntime(ctx: AppContext): {
   const lights = new Map<string, LightRuntime>();
   const props = new Map<string, PropRuntime>();
   let activeProxy: Object3D | null = null;
+  let activeProxyMode: 'translate' | 'rotate' | null = null;
+
+  const createAimParts = (owner: Extract<EntityRef, { kind: 'aim' }>['owner']) => {
+    const proxy = new Object3D();
+    proxy.visible = false;
+    proxy.layers.set(LAYER_HELPERS);
+    proxy.userData.editorOnly = true;
+    ctx.scene.add(proxy);
+
+    const handle = new Mesh(new SphereGeometry(0.05, 16, 12), new MeshBasicMaterial({ color: 0xe8a33d, depthTest: false, depthWrite: false }));
+    handle.name = 'Aim target handle';
+    handle.renderOrder = 1000;
+    prepareHelper(handle);
+    ctx.scene.add(handle);
+
+    const geometry = new BufferGeometry().setFromPoints([new Vector3(), new Vector3()]);
+    const line = new Line(geometry, new LineBasicMaterial({ color: 0xe8a33d, transparent: true, opacity: 0.72, depthTest: false, depthWrite: false }));
+    line.name = 'Aim guide';
+    line.renderOrder = 999;
+    line.frustumCulled = false;
+    line.layers.set(LAYER_HELPERS);
+    line.userData.editorOnly = true;
+    ctx.scene.add(line);
+
+    const unregisterAim = ctx.picking.register(handle, { kind: 'aim', owner });
+    return { aimProxy: proxy, aimHandle: handle, aimLine: line, unregisterAim };
+  };
+
+  const syncAimParts = (
+    parts: Pick<LightRuntime, 'aimProxy' | 'aimHandle' | 'aimLine'>,
+    position: Vec3,
+    target: Vec3,
+    owner: Extract<EntityRef, { kind: 'aim' }>['owner'],
+  ) => {
+    parts.aimProxy.position.fromArray(target);
+    parts.aimHandle.position.fromArray(target);
+    const positions = parts.aimLine.geometry.getAttribute('position');
+    positions.setXYZ(0, position[0], position[1], position[2]);
+    positions.setXYZ(1, target[0], target[1], target[2]);
+    positions.needsUpdate = true;
+    parts.aimLine.geometry.computeBoundingSphere();
+    const visible = ctx.views.mode === 'set' && selectionOwns(ctx.selection.current, owner);
+    parts.aimHandle.visible = visible;
+    parts.aimLine.visible = visible;
+  };
 
   const createLight = (state: LightState): LightRuntime => {
     const body = new Group();
@@ -87,6 +140,7 @@ export function createLightRuntime(ctx: AppContext): {
     const proxy = new Object3D();
     proxy.userData.editorOnly = true;
     ctx.scene.add(proxy);
+    const aim = createAimParts({ kind: 'light', id: state.id });
 
     const modifier = getModifier(state.modifierId);
     const zeroIntensity = state.output.kind === 'strobe'
@@ -130,6 +184,7 @@ export function createLightRuntime(ctx: AppContext): {
       body,
       stand,
       proxy,
+      ...aim,
       spot,
       point,
       target,
@@ -152,6 +207,7 @@ export function createLightRuntime(ctx: AppContext): {
     const proxy = new Object3D();
     proxy.userData.editorOnly = true;
     ctx.scene.add(proxy);
+    const aim = createAimParts({ kind: 'prop', id: state.id });
     const bounce = state.kind === 'bounce'
       ? new RectAreaLight(0xffffff, renderIntensityContinuous(0, ctx.store.doc.camera), state.widthM, state.heightM)
       : null;
@@ -163,6 +219,7 @@ export function createLightRuntime(ctx: AppContext): {
     const runtime: PropRuntime = {
       body,
       proxy,
+      ...aim,
       surface,
       bounce,
       unregister: ctx.picking.register(body, { kind: 'prop', id: state.id }),
@@ -179,12 +236,15 @@ export function createLightRuntime(ctx: AppContext): {
     runtime.body.position.fromArray(position);
     runtime.proxy.position.fromArray(position);
     const posedState = position === state.position ? state : { ...state, position };
-    const axis = new Vector3(...state.target).sub(new Vector3(...position)).normalize();
-    orientForward(runtime.body, axis, state.rollDeg);
+    orientForward(runtime.body, position, state.target, state.rollDeg);
+    if (!(ctx.gizmo.attached === runtime.proxy && ctx.gizmo.dragging && ctx.gizmo.toolMode === 'rotate')) {
+      runtime.proxy.quaternion.copy(aimQuaternion(position, state.target, state.rollDeg));
+    }
     runtime.stand.position.set(position[0], Math.max(0, position[1]) / 2, position[2]);
     runtime.stand.scale.y = Math.max(0.05, position[1]);
     if (runtime.spot && runtime.target) {
       runtime.spot.position.fromArray(position);
+      runtime.spot.quaternion.copy(aimQuaternionForNegativeZ(position, state.target, state.rollDeg));
       runtime.target.position.fromArray(state.target);
       runtime.target.updateMatrixWorld(true);
       const outer = lightOuterAngle(state);
@@ -202,7 +262,7 @@ export function createLightRuntime(ctx: AppContext): {
     const areaShare = runtime.area && state.accessories.gridDeg === null && !state.accessories.barnDoors ? AREA_SHARE : 0;
     if (runtime.area) {
       runtime.area.position.fromArray(position);
-      runtime.area.quaternion.copy(runtime.body.quaternion).multiply(FLIP_TO_LIGHT_AXIS);
+      runtime.area.quaternion.copy(aimQuaternionForNegativeZ(position, state.target, state.rollDeg));
       const color = lightColor(state.colorTempK, doc.camera.whiteBalanceK);
       runtime.area.color.setRGB(color[0], color[1], color[2], LinearSRGBColorSpace);
       const physical = onAxisIntensity(state);
@@ -228,6 +288,7 @@ export function createLightRuntime(ctx: AppContext): {
       runtime.point.visible = state.enabled;
     }
     if (runtime.area) runtime.area.visible = state.enabled && areaShare > 0;
+    syncAimParts(runtime, position, state.target, { kind: 'light', id: state.id });
   };
 
   const moveProp = (runtime: PropRuntime, state: PropState, doc: SceneDocument, position: Vec3) => {
@@ -235,11 +296,14 @@ export function createLightRuntime(ctx: AppContext): {
     runtime.body.position.fromArray(position);
     runtime.proxy.position.fromArray(position);
     const axis = new Vector3(...state.target).sub(new Vector3(...position)).normalize();
-    orientForward(runtime.body, axis, state.rollDeg);
+    orientForward(runtime.body, position, state.target, state.rollDeg);
+    if (!(ctx.gizmo.attached === runtime.proxy && ctx.gizmo.dragging && ctx.gizmo.toolMode === 'rotate')) {
+      runtime.proxy.quaternion.copy(aimQuaternion(position, state.target, state.rollDeg));
+    }
     if (runtime.bounce) {
       const faceNormal = axis.lengthSq() > 0 ? axis : new Vector3(0, 0, 1);
       runtime.bounce.position.copy(new Vector3(...position).addScaledVector(faceNormal, 0.015));
-      runtime.bounce.quaternion.copy(runtime.body.quaternion).multiply(FLIP_TO_LIGHT_AXIS);
+      runtime.bounce.quaternion.copy(aimQuaternionForNegativeZ(position, state.target, state.rollDeg));
       const virtualScale = state.color === '#c8cdd2' ? 0.35 : 1;
       const width = Math.max(0.05, state.widthM * virtualScale);
       const height = Math.max(0.05, state.heightM * virtualScale);
@@ -265,13 +329,19 @@ export function createLightRuntime(ctx: AppContext): {
       setPhysicalIntensity(runtime.bounce, candela / effectiveArea, true, doc);
       runtime.bounce.visible = state.kind === 'bounce';
     }
+    syncAimParts(runtime, position, state.target, { kind: 'prop', id: state.id });
   };
 
   const disposeLight = (id: string) => {
     const runtime = lights.get(id);
     if (!runtime) return;
     runtime.unregister();
-    ctx.scene.remove(runtime.body, runtime.stand, runtime.proxy);
+    runtime.unregisterAim();
+    ctx.scene.remove(runtime.body, runtime.stand, runtime.proxy, runtime.aimProxy, runtime.aimHandle, runtime.aimLine);
+    runtime.aimLine.geometry.dispose();
+    disposeMaterials(runtime.aimLine.material);
+    runtime.aimHandle.geometry.dispose();
+    disposeMaterials(runtime.aimHandle.material);
     disposeObject(runtime.body);
     disposeObject(runtime.stand);
     if (runtime.spot) {
@@ -283,8 +353,11 @@ export function createLightRuntime(ctx: AppContext): {
       ctx.scene.remove(runtime.point);
     }
     if (runtime.area) ctx.scene.remove(runtime.area);
-    if (ctx.gizmo.attached === runtime.proxy) ctx.gizmo.detach();
-    if (activeProxy === runtime.proxy) activeProxy = null;
+    if (ctx.gizmo.attached === runtime.proxy || ctx.gizmo.attached === runtime.aimProxy) ctx.gizmo.detach();
+    if (activeProxy === runtime.proxy || activeProxy === runtime.aimProxy) {
+      activeProxy = null;
+      activeProxyMode = null;
+    }
     lights.delete(id);
   };
 
@@ -292,11 +365,19 @@ export function createLightRuntime(ctx: AppContext): {
     const runtime = props.get(id);
     if (!runtime) return;
     runtime.unregister();
-    ctx.scene.remove(runtime.body, runtime.proxy);
+    runtime.unregisterAim();
+    ctx.scene.remove(runtime.body, runtime.proxy, runtime.aimProxy, runtime.aimHandle, runtime.aimLine);
+    runtime.aimLine.geometry.dispose();
+    disposeMaterials(runtime.aimLine.material);
+    runtime.aimHandle.geometry.dispose();
+    disposeMaterials(runtime.aimHandle.material);
     disposeObject(runtime.body);
     if (runtime.bounce) ctx.scene.remove(runtime.bounce);
-    if (ctx.gizmo.attached === runtime.proxy) ctx.gizmo.detach();
-    if (activeProxy === runtime.proxy) activeProxy = null;
+    if (ctx.gizmo.attached === runtime.proxy || ctx.gizmo.attached === runtime.aimProxy) ctx.gizmo.detach();
+    if (activeProxy === runtime.proxy || activeProxy === runtime.aimProxy) {
+      activeProxy = null;
+      activeProxyMode = null;
+    }
     props.delete(id);
   };
 
@@ -311,10 +392,11 @@ export function createLightRuntime(ctx: AppContext): {
         current = createLight(state);
       }
       current.state = state;
-      const signature = lightBodySignature(state, ctx.selection.current?.kind === 'light' && ctx.selection.current.id === state.id);
+      const selected = selectionOwns(ctx.selection.current, { kind: 'light', id: state.id });
+      const signature = lightBodySignature(state, selected);
       if (current.bodySignature !== signature) {
         clearGroup(current.body);
-        buildLightBody(current.body, state, ctx.selection.current?.kind === 'light' && ctx.selection.current.id === state.id);
+        buildLightBody(current.body, state, selected);
         current.bodySignature = signature;
       } else {
         updateLightBodyColor(current.body, state);
@@ -339,8 +421,8 @@ export function createLightRuntime(ctx: AppContext): {
         current.area.height = modifier.heightM;
       }
       const dragging = ctx.gizmo.attached === current.proxy && ctx.gizmo.dragging;
-      const position = dragging ? current.position : state.position;
-      moveLight(current, state, doc, position);
+      const liveState = liveLightDragState(ctx, current, state);
+      moveLight(current, liveState, doc, dragging ? current.position : state.position);
     }
 
     const propIds = new Set(doc.props.map((prop) => prop.id));
@@ -366,11 +448,13 @@ export function createLightRuntime(ctx: AppContext): {
         }
       }
       const dragging = ctx.gizmo.attached === runtime.proxy && ctx.gizmo.dragging;
-      moveProp(runtime, state, doc, dragging ? runtime.position : state.position);
+      const liveState = livePropDragState(ctx, runtime, state);
+      moveProp(runtime, liveState, doc, dragging ? runtime.position : state.position);
     }
 
     const selected = ctx.selection.current;
-    if ((selected?.kind === 'light' && !lights.has(selected.id)) || (selected?.kind === 'prop' && !props.has(selected.id))) {
+    const owner = selected?.kind === 'aim' ? selected.owner : selected;
+    if ((owner?.kind === 'light' && !lights.has(owner.id)) || (owner?.kind === 'prop' && !props.has(owner.id))) {
       ctx.selection.set(null);
     }
     updateSelectionHighlight(ctx.selection.current);
@@ -379,29 +463,93 @@ export function createLightRuntime(ctx: AppContext): {
 
   const updateSelectionHighlight = (selected: EntityRef | null) => {
     for (const [id, runtime] of lights) {
-      const signature = lightBodySignature(runtime.state, selected?.kind === 'light' && selected.id === id);
+      const signature = lightBodySignature(runtime.state, selectionOwns(selected, { kind: 'light', id }));
       if (runtime.bodySignature === signature) continue;
       clearGroup(runtime.body);
-      buildLightBody(runtime.body, runtime.state, selected?.kind === 'light' && selected.id === id);
+      buildLightBody(runtime.body, runtime.state, selectionOwns(selected, { kind: 'light', id }));
       runtime.bodySignature = signature;
     }
   };
 
   const attachSelection = (ref: EntityRef | null) => {
+    if (ref?.kind === 'aim' && ref.owner.kind === 'light') {
+      const owner = ref.owner;
+      const runtime = lights.get(owner.id);
+      if (!runtime) return;
+      if (runtime.aimProxy === activeProxy && ctx.gizmo.attached === runtime.aimProxy && activeProxyMode === 'translate') return;
+      activeProxy = runtime.aimProxy;
+      activeProxyMode = 'translate';
+      runtime.aimProxy.position.fromArray(runtime.state.target);
+      ctx.gizmo.attach(runtime.aimProxy, {
+        mode: 'translate',
+        onChange: (object) => {
+          const target = object.position.toArray() as Vec3;
+          moveLight(runtime, { ...runtime.state, target }, ctx.store.doc as SceneDocument, runtime.position);
+        },
+        onCommit: (object) => {
+          const target = object.position.toArray() as Vec3;
+          ctx.store.update((draft) => {
+            const light = draft.lights.find((item) => item.id === owner.id);
+            if (light) light.target = target;
+          }, { label: `aim light ${owner.id} drag ${gizmoCommitSerial++}` });
+        },
+      });
+      return;
+    }
+    if (ref?.kind === 'aim' && ref.owner.kind === 'prop') {
+      const owner = ref.owner;
+      const runtime = props.get(owner.id);
+      if (!runtime) return;
+      if (runtime.aimProxy === activeProxy && ctx.gizmo.attached === runtime.aimProxy && activeProxyMode === 'translate') return;
+      activeProxy = runtime.aimProxy;
+      activeProxyMode = 'translate';
+      runtime.aimProxy.position.fromArray(runtime.state.target);
+      ctx.gizmo.attach(runtime.aimProxy, {
+        mode: 'translate',
+        onChange: (object) => {
+          const target = object.position.toArray() as Vec3;
+          moveProp(runtime, { ...runtime.state, target }, ctx.store.doc as SceneDocument, runtime.position);
+        },
+        onCommit: (object) => {
+          const target = object.position.toArray() as Vec3;
+          ctx.store.update((draft) => {
+            const prop = draft.props.find((item) => item.id === owner.id);
+            if (prop) prop.target = target;
+          }, { label: `aim prop ${owner.id} drag ${gizmoCommitSerial++}` });
+        },
+      });
+      return;
+    }
     if (ref?.kind === 'light') {
       const runtime = lights.get(ref.id);
       if (!runtime) return;
-      if (runtime.proxy === activeProxy && ctx.gizmo.attached === runtime.proxy) return;
+      const mode = ctx.gizmo.toolMode;
+      if (runtime.proxy === activeProxy && ctx.gizmo.attached === runtime.proxy && activeProxyMode === mode) return;
       activeProxy = runtime.proxy;
+      activeProxyMode = mode;
+      runtime.proxy.position.fromArray(runtime.state.position);
+      runtime.proxy.quaternion.copy(aimQuaternion(runtime.state.position, runtime.state.target, runtime.state.rollDeg));
       ctx.gizmo.attach(runtime.proxy, {
-        mode: 'translate',
-        onChange: (object) => moveLight(runtime, runtime.state, ctx.store.doc as SceneDocument, object.position.toArray() as Vec3),
+        mode,
+        space: mode === 'rotate' ? 'local' : 'world',
+        onChange: (object) => {
+          const position = object.position.toArray() as Vec3;
+          const liveState = mode === 'rotate' ? lightStateFromProxy(runtime.state, position, object.quaternion) : runtime.state;
+          moveLight(runtime, liveState, ctx.store.doc as SceneDocument, position);
+        },
         onCommit: (object) => {
           const position = object.position.toArray() as Vec3;
           ctx.store.update((draft) => {
             const light = draft.lights.find((item) => item.id === ref.id);
-            if (light) light.position = position;
-          }, { label: `move light ${ref.id} drag ${gizmoCommitSerial++}` });
+            if (!light) return;
+            if (mode === 'rotate') {
+              const aimed = aimFromQuaternion(position, object.quaternion, aimDistance(light.position, light.target));
+              light.target = aimed.target;
+              light.rollDeg = aimed.rollDeg;
+            } else {
+              light.position = position;
+            }
+          }, { label: `${mode === 'rotate' ? 'rotate' : 'move'} light ${ref.id} drag ${gizmoCommitSerial++}` });
         },
       });
       return;
@@ -409,23 +557,40 @@ export function createLightRuntime(ctx: AppContext): {
     if (ref?.kind === 'prop') {
       const runtime = props.get(ref.id);
       if (!runtime) return;
-      if (runtime.proxy === activeProxy && ctx.gizmo.attached === runtime.proxy) return;
+      const mode = ctx.gizmo.toolMode;
+      if (runtime.proxy === activeProxy && ctx.gizmo.attached === runtime.proxy && activeProxyMode === mode) return;
       activeProxy = runtime.proxy;
+      activeProxyMode = mode;
+      runtime.proxy.position.fromArray(runtime.state.position);
+      runtime.proxy.quaternion.copy(aimQuaternion(runtime.state.position, runtime.state.target, runtime.state.rollDeg));
       ctx.gizmo.attach(runtime.proxy, {
-        mode: 'translate',
-        onChange: (object) => moveProp(runtime, runtime.state, ctx.store.doc as SceneDocument, object.position.toArray() as Vec3),
+        mode,
+        space: mode === 'rotate' ? 'local' : 'world',
+        onChange: (object) => {
+          const position = object.position.toArray() as Vec3;
+          const liveState = mode === 'rotate' ? propStateFromProxy(runtime.state, position, object.quaternion) : runtime.state;
+          moveProp(runtime, liveState, ctx.store.doc as SceneDocument, position);
+        },
         onCommit: (object) => {
           const position = object.position.toArray() as Vec3;
           ctx.store.update((draft) => {
             const prop = draft.props.find((item) => item.id === ref.id);
-            if (prop) prop.position = position;
-          }, { label: `move prop ${ref.id} drag ${gizmoCommitSerial++}` });
+            if (!prop) return;
+            if (mode === 'rotate') {
+              const aimed = aimFromQuaternion(position, object.quaternion, aimDistance(prop.position, prop.target));
+              prop.target = aimed.target;
+              prop.rollDeg = aimed.rollDeg;
+            } else {
+              prop.position = position;
+            }
+          }, { label: `${mode === 'rotate' ? 'rotate' : 'move'} prop ${ref.id} drag ${gizmoCommitSerial++}` });
         },
       });
       return;
     }
     if (activeProxy && ctx.gizmo.attached === activeProxy) ctx.gizmo.detach();
     activeProxy = null;
+    activeProxyMode = null;
   };
 
   ctx.store.subscribe((doc) => sync(doc));
@@ -434,11 +599,16 @@ export function createLightRuntime(ctx: AppContext): {
       runtime.body.visible = mode === 'set';
       runtime.stand.visible = mode === 'set';
     }
+    for (const runtime of lights.values()) syncAimParts(runtime, runtime.position, runtime.state.target, { kind: 'light', id: runtime.state.id });
+    for (const runtime of props.values()) syncAimParts(runtime, runtime.position, runtime.state.target, { kind: 'prop', id: runtime.state.id });
   });
   ctx.selection.onChange((ref) => {
     updateSelectionHighlight(ref);
+    for (const runtime of lights.values()) syncAimParts(runtime, runtime.position, runtime.state.target, { kind: 'light', id: runtime.state.id });
+    for (const runtime of props.values()) syncAimParts(runtime, runtime.position, runtime.state.target, { kind: 'prop', id: runtime.state.id });
     attachSelection(ref);
   });
+  ctx.gizmo.onToolModeChange(() => attachSelection(ctx.selection.current));
   sync(ctx.store.doc as SceneDocument);
   attachSelection(ctx.selection.current);
 
@@ -475,10 +645,13 @@ function doorSignature(state: LightState): string {
   return doors ? `${doors.top},${doors.bottom},${doors.left},${doors.right}` : '';
 }
 
-function orientForward(object: Object3D, axis: Vector3, rollDeg: number): void {
-  const forward = axis.lengthSq() > 1e-12 ? axis.clone().normalize() : FORWARD;
-  object.quaternion.setFromUnitVectors(FORWARD, forward);
-  if (rollDeg !== 0) object.quaternion.multiply(new Quaternion().setFromAxisAngle(FORWARD, (rollDeg * Math.PI) / 180));
+/** Live light and prop bodies use the shared +Z-forward frame directly. */
+export function lightBodyQuaternion(position: Vec3, target: Vec3, rollDeg: number, out = new Quaternion()): Quaternion {
+  return aimQuaternion(position, target, rollDeg, out);
+}
+
+function orientForward(object: Object3D, position: Vec3, target: Vec3, rollDeg: number): void {
+  object.quaternion.copy(lightBodyQuaternion(position, target, rollDeg));
 }
 
 function buildLightBody(root: Group, state: LightState, selected: boolean): void {
@@ -604,6 +777,58 @@ function prepareHelper(object: Object3D): void {
     object.castShadow = false;
     object.receiveShadow = false;
   }
+}
+
+function selectionOwns(
+  ref: EntityRef | null,
+  owner: Extract<EntityRef, { kind: 'aim' }>['owner'],
+): boolean {
+  const selected = ref?.kind === 'aim' ? ref.owner : ref;
+  if (selected === null || selected === undefined) return false;
+  if (owner.kind === 'camera') return selected.kind === 'camera';
+  return (selected.kind === 'light' || selected.kind === 'prop')
+    && selected.kind === owner.kind
+    && selected.id === owner.id;
+}
+
+function aimDistance(position: Vec3, target: Vec3): number {
+  return Math.hypot(target[0] - position[0], target[1] - position[1], target[2] - position[2]);
+}
+
+function lightStateFromProxy(state: LightState, position: Vec3, quaternion: Quaternion): LightState {
+  const aimed = aimFromQuaternion(position, quaternion, aimDistance(state.position, state.target));
+  return { ...state, target: aimed.target, rollDeg: aimed.rollDeg };
+}
+
+function propStateFromProxy(state: PropState, position: Vec3, quaternion: Quaternion): PropState {
+  const aimed = aimFromQuaternion(position, quaternion, aimDistance(state.position, state.target));
+  return { ...state, target: aimed.target, rollDeg: aimed.rollDeg };
+}
+
+function liveLightDragState(ctx: AppContext, runtime: LightRuntime, state: LightState): LightState {
+  if (!ctx.gizmo.dragging) return state;
+  if (ctx.gizmo.attached === runtime.aimProxy) {
+    return { ...state, target: runtime.aimProxy.position.toArray() as Vec3 };
+  }
+  if (ctx.gizmo.attached === runtime.proxy && ctx.gizmo.toolMode === 'rotate') {
+    return lightStateFromProxy(state, runtime.position, runtime.proxy.quaternion);
+  }
+  return state;
+}
+
+function livePropDragState(ctx: AppContext, runtime: PropRuntime, state: PropState): PropState {
+  if (!ctx.gizmo.dragging) return state;
+  if (ctx.gizmo.attached === runtime.aimProxy) {
+    return { ...state, target: runtime.aimProxy.position.toArray() as Vec3 };
+  }
+  if (ctx.gizmo.attached === runtime.proxy && ctx.gizmo.toolMode === 'rotate') {
+    return propStateFromProxy(state, runtime.position, runtime.proxy.quaternion);
+  }
+  return state;
+}
+
+function disposeMaterials(material: Mesh['material'] | Line['material']): void {
+  for (const item of Array.isArray(material) ? material : [material]) item.dispose();
 }
 
 function clearGroup(group: Group): void {

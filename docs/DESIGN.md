@@ -70,6 +70,11 @@ stand-in mannequin is exactly that grey.
 Transform gizmos for camera and lights, plus typed values (distance, height, angle) for
 precise setups. Optional "aim at subject" constraint.
 
+Camera, light and prop aims share one orientation frame: local +Z points from position to
+target, world +Y sets the upright reference, and positive roll turns clockwise when viewed
+from behind along the aim (90° lays a stripbox horizontal). A selected object shows a
+target handle and guide line; dragging the handle moves the aim point directly.
+
 ### 4. Lights and modifiers
 
 - Power is converted to luminous output with a fixed efficacy assumption, calibrated so a

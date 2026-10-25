@@ -1,6 +1,7 @@
 import { LinearSRGBColorSpace, PointLight, Vector3 } from 'three';
 import type { Light, Object3D } from 'three';
 import { PhysicalSpotLight, ShapedAreaLight } from 'three-gpu-pathtracer';
+import { aimQuaternionForNegativeZ } from '../../scene/aim';
 import { lightColor } from '../../scene/lightModel';
 import type { CameraState, LightState } from '../../scene/types';
 import { planEmitter } from './renderMath';
@@ -43,10 +44,13 @@ export function createRenderEmitter(state: LightState, camera: CameraState): Ren
   if (plan.kind !== 'spot') light.position.fromArray(state.position);
   light.color.setRGB(rgb[0], rgb[1], rgb[2], LinearSRGBColorSpace);
   if (plan.kind !== 'point') {
-    // three.js lights emit along local -Z; `lookAt` therefore aims the face at target.
-    light.lookAt(target);
-    light.rotateZ((-state.rollDeg * Math.PI) / 180);
+    light.quaternion.copy(renderEmitterQuaternion(state.position, state.target, state.rollDeg));
   }
 
   return { light, target: targetObject };
+}
+
+/** World orientation for a render light whose emitted direction is local -Z. */
+export function renderEmitterQuaternion(position: LightState['position'], target: LightState['target'], rollDeg: number) {
+  return aimQuaternionForNegativeZ(position, target, rollDeg);
 }
