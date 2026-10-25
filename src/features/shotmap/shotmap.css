@@ -1,0 +1,132 @@
+/* Shot map dialog: diagram (white sheet) beside the settings table, and the print-only
+   view used by "Print / PDF". The dialog itself is dark-themed; the diagram keeps its own
+   white background from the SVG. */
+
+.shotmap {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.shotmap-layout {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+.shotmap-diagram {
+  flex: 1 1 420px;
+  min-width: 0;
+}
+
+.shotmap-diagram svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  background: #fff;
+  border-radius: 6px;
+}
+
+.shotmap-table-wrap {
+  flex: 1 1 320px;
+  min-width: 0;
+  overflow-x: auto;
+}
+
+.shotmap-settings {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.shotmap-settings th,
+.shotmap-settings td {
+  padding: 4px 8px;
+  text-align: left;
+  vertical-align: top;
+  border-bottom: 1px solid var(--border);
+}
+
+.shotmap-settings .shotmap-section th {
+  padding-top: 10px;
+  color: var(--text-dim);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  border-bottom-color: var(--border);
+}
+
+.shotmap-settings .shotmap-cols th {
+  color: var(--text-dim);
+  font-weight: 600;
+}
+
+.shotmap-settings .shotmap-pair th {
+  color: var(--text-dim);
+  font-weight: 400;
+  width: 40%;
+}
+
+.shotmap-swatch {
+  display: inline-block;
+  width: 11px;
+  height: 11px;
+  border-radius: 2px;
+  border: 1px solid var(--border);
+  vertical-align: -1px;
+}
+
+.shotmap-actions {
+  display: flex;
+  gap: 8px;
+}
+
+/* ------------------------------------------------------------- print view */
+
+.shotmap-print {
+  display: none;
+}
+
+@media print {
+  body.shotmap-printing > *:not(.shotmap-print) {
+    display: none !important;
+  }
+
+  body.shotmap-printing .shotmap-print {
+    display: block;
+  }
+
+  .shotmap-print svg {
+    width: 100%;
+    height: auto;
+  }
+
+  .shotmap-print table {
+    width: 100%;
+    margin-top: 12px;
+    border-collapse: collapse;
+    color: #111;
+    font-size: 11px;
+  }
+
+  .shotmap-print th,
+  .shotmap-print td {
+    padding: 3px 6px;
+    text-align: left;
+    border-bottom: 1px solid #ccc;
+  }
+
+  .shotmap-print .shotmap-section th {
+    padding-top: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    font-size: 10px;
+  }
+
+  .shotmap-print .shotmap-pair th {
+    width: 40%;
+    font-weight: 400;
+    color: #555;
+  }
+}
