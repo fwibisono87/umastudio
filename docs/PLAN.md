@@ -9,19 +9,33 @@ the build/typecheck and in Chrome (screenshots, console, rendered state) before 
 | Wave | Lane | Size | Who |
 |---|---|---|---|
 | 0 | Scene document, units, photometry, project skeleton (Vite + TS + three) | S | Claude — every other lane builds on this contract. **Done.** |
-| 1 | PMX/UmaViewer loader → physical materials, textures, alpha, bone map | M | Codex (GPT Luna) |
-| 1 | Physical camera, exposure UI, live-view DoF, flash-sync band | M | Codex (GPT Luna); exposure maths reviewed by hand |
-| 1 | Lights: power units, power steps, modifier presets, placement, props | M–L | Codex (GPT Luna) |
-| 1 | Shot map: SVG diagram + settings table + export | S–M | MiMo-V2.6-Pro (self-contained) |
-| 2 | Posing: bone picker, FK gizmo, limb IK, presets, mirroring, expressions | M–L | Codex — needs the loader |
-| 2 | HQ render via path tracer (skinned → static bake, physical camera, area lights) | M | Codex — needs loader, camera, lights; riskiest lane |
-| 2 | Scene save/load, autosave | S | Codex |
-| 3 | UI cohesion pass over the integrated app | S | Claude + one lane |
+| 1 | PMX/UmaViewer loader → physical materials, textures, alpha, bone map | M | Codex (GPT Luna). **Done**; normals recomputed from geometry by default (toon-edited normals flattened the key light) |
+| 1 | Physical camera, exposure UI, live-view DoF, flash-sync band | M | Codex (GPT Luna); exposure maths reviewed by hand. **Done**; white balance added |
+| 1 | Lights: power units, power steps, modifier presets, placement, props | M–L | Codex (GPT Luna). **Done**; area lights flipped to face their target |
+| 1 | Shot map: SVG diagram + settings table + export | S–M | MiMo-V2.6-Pro (self-contained). **Done** |
+| 2 | Posing: bone picker, FK gizmo, limb IK, presets, mirroring, expressions | M–L | Codex — needs the loader. **Done**; presets redone with a real-skeleton FK test |
+| 2 | HQ render via path tracer (skinned → static bake, physical camera, area lights) | M | Codex — needs loader, camera, lights; riskiest lane. **Done** |
+| 2 | Scene save/load, autosave | S | Codex. **Done** |
+| 3 | UI cohesion pass over the integrated app | S | Claude + one lane. **Done** (work light, grouped toolbar, shortcuts) |
 
 Wave 0 put everything the lanes share into `src/scene/` (document types, photometry,
 modifier table) and `src/core/` (store, views, picking, gizmo), and gave every feature its
 own folder, so lights and the shot map no longer depend on the loader or camera and moved
 up to wave 1. Lanes within a wave run in parallel. Rough total: ~8 lanes.
+
+## Status (2026-10-25)
+
+Every wave is merged on `main`: 87 unit tests, typecheck and build all pass, and the app
+was checked in headless Chrome. Open items:
+
+- **Textures.** Untested: the test export has no `Texture2D/`, so materials fall back to
+  flat colours.
+- **Live vs render.** On the subject, the HQ render agrees with the meter to within about
+  ¼ stop. The live preview's softbox (part area light, part spot) puts about ⅔ stop more
+  light on the backdrop and the shadow side than the path tracer does. Trust the render
+  and the meter.
+- **Bundle size.** The main chunk is over 500 kB. Code-splitting the path tracer would fix
+  it.
 
 ## Risks
 

@@ -6,7 +6,8 @@ A browser-based photo-studio simulator in the spirit of
 lights in 3D space, and produce both a lighting diagram ("shot map") and a high-quality
 physically based render of the photo.
 
-> Status: early build. The app skeleton runs; features are landing wave by wave — see
+> Status: first full build. Loading, posing, lights, camera, shot map, HQ render and
+> save/load all work. Textured materials are still untested; see
 > [`docs/DESIGN.md`](docs/DESIGN.md) for the design and [`docs/PLAN.md`](docs/PLAN.md) for
 > the build plan.
 
