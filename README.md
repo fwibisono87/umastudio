@@ -11,6 +11,10 @@ physically based render of the photo.
 > [`docs/DESIGN.md`](docs/DESIGN.md) for the design and [`docs/PLAN.md`](docs/PLAN.md) for
 > the build plan.
 
+Try it at **https://fwibisono87.github.io/umastudio/**, which redeploys on every push to
+`main`. Bring your own UmaViewer export: model files never leave your machine. To run it
+locally:
+
 ```sh
 pnpm install
 pnpm dev        # http://localhost:5173

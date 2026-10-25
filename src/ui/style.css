@@ -44,7 +44,9 @@ body {
 .toolbar {
   grid-area: toolbar;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  /* Each side is at least as wide as its buttons, so they never truncate; the centre
+     group stays centred while there is room and shifts aside when there isn't. */
+  grid-template-columns: minmax(max-content, 1fr) auto minmax(max-content, 1fr);
   align-items: center;
   padding: 0 8px;
   background: var(--panel);
