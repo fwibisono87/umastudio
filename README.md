@@ -63,7 +63,8 @@ copyright notice. That file is the legal part; everything below is not.
 
 ```
 /*
- * Your warranty is now void.
+ * This is a simulator. Photons were not harmed, consulted, or accurately
+ * modelled in the making of your render.
  *
  * I am not responsible for blown-out highlights, crushed shadows, a client
  * shoot that went sideways because the sim said f/8 and your strobe said
